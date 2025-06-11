@@ -4,6 +4,7 @@
   "description": "",
   "main": "src/server.ts",
   "scripts": {
+    "postinstall": "npm run build",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/server.ts",
     "dev:prod": "cross-env NODE_ENV=production nodemon --watch src --ext ts --exec ts-node src/server.ts",
     "build": "tsc",
@@ -54,5 +55,7 @@
     "xss": "^1.0.15",
     "xss-clean": "^0.1.4",
     "zod": "^3.25.20"
-  }
+  },
+  "engines": {"node": "16.x"  
+}
 }
