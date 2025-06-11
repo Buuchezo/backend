@@ -4,6 +4,7 @@ import xss from "xss";
 import cors from "cors";
 
 import morgan from "morgan";
+import slotsRouter from "./routes/slotsRoutes"
 import userRouter from "./routes/userRoutes";
 import appointmentRouter from "./routes/appointmentRoutes";
 import internalEventsRouter from "./routes/internalEventsRoutes";
@@ -179,6 +180,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/appointments", appointmentRouter);
 app.use("/api/v1/internal-events", internalEventsRouter);
+app.use("/api/v1/slots", slotsRouter);
 
 app.all(/(.*)/, (req: Request, res: Response, next: NextFunction) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server`, 404));
