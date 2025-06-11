@@ -8,10 +8,10 @@ import {
   updateAppointment,
   deleteAppointment,
 } from '../controllers/appointmentsController'
-import { generateSlotsMiddleware } from '../../utils/generateSlots'
-import { bookAppointmentMiddleware } from '../../utils/bookAppointment'
-import { updateEventMiddleware } from '../../utils/updateBookedAppointment'
-import { reassignAppointmentsMiddleware } from '../../utils/reassignWorker'
+
+import { bookAppointmentMiddleware } from '../utils/bookAppointment'
+import { updateEventMiddleware } from '../utils/updateBookedAppointment'
+import { reassignAppointmentsMiddleware } from '../utils/reassignWorker'
 import { protect, restrictTo } from '../controllers/authenticationController'
 
 const router = express.Router()

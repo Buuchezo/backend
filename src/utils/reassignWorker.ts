@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
-import { AppointmentModel } from '../src/models/appointmentModel'
-import { UserModel } from '../src/models/userModel'
+import { AppointmentModel } from '../models/appointmentModel'
+import { UserModel } from '../models/userModel'
 import { parseISO, addMinutes, format } from 'date-fns'
 
 // Define plain appointment type (not Mongoose document)

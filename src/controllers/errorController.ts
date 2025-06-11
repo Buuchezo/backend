@@ -1,4 +1,4 @@
-import { AppError } from '../../utils/appErrorr'
+import { AppError } from '../utils/appErrorr'
 import { Response, Request, NextFunction } from 'express'
 
 interface MongooseCastError extends Error {

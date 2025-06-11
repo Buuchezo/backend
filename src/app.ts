@@ -8,7 +8,7 @@ import slotsRouter from "./routes/slotsRoutes"
 import userRouter from "./routes/userRoutes";
 import appointmentRouter from "./routes/appointmentRoutes";
 import internalEventsRouter from "./routes/internalEventsRoutes";
-import { AppError } from "../utils/appErrorr";
+import { AppError } from "./utils/appErrorr";
 import { errorController } from "./controllers/errorController";
 import helmet from "helmet";
 

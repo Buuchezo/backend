@@ -1,10 +1,10 @@
 import { UserModel } from '../models/userModel'
 import { Request, Response, NextFunction } from 'express'
-import { catchAsync } from '../../utils/catchAsync'
+import { catchAsync } from '../utils/catchAsync'
 import jwt, { JwtPayload } from 'jsonwebtoken'
-import { AppError } from '../../utils/appErrorr'
+import { AppError } from '../utils/appErrorr'
 import { IUser } from '../models/userModel'
-import { sendEmail } from '../../utils/email'
+import { sendEmail } from '../utils/email'
 import crypto from 'crypto'
 
 export interface AuthenticatedRequest extends Request {

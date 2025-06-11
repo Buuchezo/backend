@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { parseISO, format, addMinutes } from 'date-fns'
-import { AppointmentModel } from '../src/models/appointmentModel'
-import { UserModel } from '../src/models/userModel'
+import { AppointmentModel } from '../models/appointmentModel'
+import { UserModel } from '../models/userModel'
 
 function normalizeToScheduleXFormat(datetime: string): string {
   try {

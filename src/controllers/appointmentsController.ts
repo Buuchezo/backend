@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from 'express'
 import { AppointmentModel } from '../models/appointmentModel'
-import { catchAsync } from '../../utils/catchAsync'
-import { AppError } from '../../utils/appErrorr'
+import { catchAsync } from '../utils/catchAsync'
+import { AppError } from '../utils/appErrorr'
 
 type SanitizedQuery = Record<string, string | string[] | undefined>
 

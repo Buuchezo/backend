@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { InternalEventModel } from '../models/internalEventModel'
-import { catchAsync } from '../../utils/catchAsync'
-import { AppError } from '../../utils/appErrorr'
+import { catchAsync } from '../utils/catchAsync'
+import { AppError } from '../utils/appErrorr'
 
 export const getAllInternalEvents = catchAsync(
   async (req: Request, res: Response) => {

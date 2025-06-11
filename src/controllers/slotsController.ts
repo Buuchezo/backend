@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import { catchAsync } from "../../utils/catchAsync";
+import { catchAsync } from "../utils/catchAsync";
 import { SlotModel } from "../models/slotsModel";
-import { AppError } from "../../utils/appErrorr";
+import { AppError } from "../utils/appErrorr";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {

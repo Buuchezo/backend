@@ -1,4 +1,4 @@
-import { generateSlotsMiddleware } from "../../utils/generateSlots";
+import { generateSlotsMiddleware } from "../utils/generateSlots";
 import express from "express";
 import { createSlots, getSlot, getSlots } from "../controllers/slotsController";
 
