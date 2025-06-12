@@ -44,39 +44,55 @@ export const updateSlot = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const slotId = req.params.id;
 
-    const updatedFromMiddleware = res.locals.updatedAppointment;
+    // If middleware ran, use its values
+    const updatedSlotFromMiddleware = res.locals.updatedSlot;
+    const bookedSlotFromMiddleware = res.locals.bookedSlot;
 
-    const eventData = updatedFromMiddleware || req.body.eventData;
-
-    if (!eventData) {
-      return next(new AppError("Missing eventData in request body", 400));
+    // If middleware didn't run, fallback to client payload
+    const appointment = bookedSlotFromMiddleware || req.body.eventData;
+    if (!appointment) {
+      return next(
+        new AppError("Missing appointment data in request body", 400)
+      );
     }
 
-    if ("_id" in eventData) {
-      delete eventData._id;
+    // Ensure no _id is used in creation
+    if ("_id" in appointment) {
+      delete appointment._id;
     }
 
-    // Attempt to replace slot with new data
-    const updatedSlot = await SlotModel.findByIdAndUpdate(
-      slotId,
-      {
-        ...eventData,
-      },
-      {
-        new: true,
-        runValidators: true,
-        overwrite: true, // 👈 ensures full replacement like PUT
+    // 1. Update the original available slot (if not already done by middleware)
+    let updatedSlot = updatedSlotFromMiddleware;
+    if (!updatedSlotFromMiddleware) {
+      const slot = await SlotModel.findById(slotId);
+      if (!slot) {
+        return next(new AppError("No slot found with that id", 404));
       }
-    );
 
-    if (!updatedSlot) {
-      return next(new AppError("No slot found with that id", 404));
+      if ((slot.remainingCapacity ?? 1) <= 1) {
+        await SlotModel.findByIdAndDelete(slotId);
+      } else {
+        updatedSlot = await SlotModel.findByIdAndUpdate(
+          slotId,
+          { $inc: { remainingCapacity: -1 } },
+          { new: true }
+        );
+      }
     }
+
+    // 2. Create the booked appointment (if not already done by middleware)
+    const newAppointment =
+      bookedSlotFromMiddleware ||
+      (await SlotModel.create({
+        ...appointment,
+        calendarId: "booked",
+      }));
 
     res.status(200).json({
       status: "success",
       data: {
-        appointment: updatedSlot,
+        appointment: newAppointment,
+        updatedSlot,
       },
     });
   }

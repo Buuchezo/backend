@@ -1,4 +1,5 @@
 import { generateSlotsMiddleware } from "../utils/generateSlots";
+
 import express from "express";
 import {
   createSlots,
@@ -12,6 +13,6 @@ const router = express.Router();
 router.post("/", generateSlotsMiddleware, createSlots);
 router.get("/", getSlots);
 router.get("/:id", getSlot);
-router.put("/:id", addEventMiddleware, updateSlot);
+router.patch("/:id", addEventMiddleware, updateSlot);
 
 export default router;

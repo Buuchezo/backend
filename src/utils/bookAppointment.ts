@@ -6,6 +6,7 @@ import { CalendarEventInput } from "./generateSlots";
 import { User } from "../app";
 import { AppError } from "./appErrorr";
 import mongoose from "mongoose";
+import { SlotModel } from "../models/slotsModel";
 
 function normalizeToScheduleXFormat(datetime: string): string {
   try {
@@ -119,56 +120,29 @@ export const addEventMiddleware = async (
     );
   }
 
-  if (!workers || workers.length === 0) {
-    return next(new AppError("No workers available in request body", 400));
+  const slot = await SlotModel.findById(eventData._id);
+  if (!slot || slot.remainingCapacity === undefined) {
+    return next(
+      new AppError("Slot not found or missing remaining capacity", 404)
+    );
   }
 
-  const formattedStart = format(parseISO(eventData.start), "yyyy-MM-dd HH:mm");
-  const formattedEnd = format(parseISO(eventData.end), "yyyy-MM-dd HH:mm");
+  if (slot.remainingCapacity <= 0) {
+    return next(new AppError("Slot is already fully booked", 409));
+  }
 
-  const parsedStart = parseISO(formattedStart);
-  const parsedEnd = parseISO(formattedEnd);
-
-  const overlappingAppointments = events.filter((e) => {
-    if (!e.title?.startsWith("Booked Appointment")) return false;
-    try {
-      const existingStart = parseISO(e.start);
-      const existingEnd = parseISO(e.end);
-      if (isNaN(existingStart.getTime()) || isNaN(existingEnd.getTime()))
-        return false;
-      return parsedStart < existingEnd && parsedEnd > existingStart;
-    } catch {
-      return false;
-    }
+  const overlappingAppointments = await SlotModel.find({
+    start: slot.start,
+    end: slot.end,
+    calendarId: "booked",
   });
 
-  // Normalize lastAssignedIndex
-  const validLastIndex = Number.isInteger(lastAssignedIndex)
-    ? lastAssignedIndex
-    : 0;
-  let index = validLastIndex % workers.length;
-  console.log(
-    "📌 Using lastAssignedIndex:",
-    lastAssignedIndex,
-    "→ safe index:",
-    index
-  );
-
-  // Rotate to next available worker
-  let assignedWorker: User | undefined = undefined;
   const totalWorkers = workers.length;
+  let index = Number.isInteger(lastAssignedIndex) ? lastAssignedIndex : 0;
 
+  let assignedWorker: User | undefined;
   for (let i = 0; i < totalWorkers; i++) {
-    const candidate = workers[index];
-    if (!candidate) {
-      console.warn(
-        "❗ Invalid worker index:",
-        index,
-        "in workers array:",
-        workers
-      );
-      break;
-    }
+    const candidate = workers[index % totalWorkers];
     const isBusy = overlappingAppointments.some(
       (appt) => String(appt.ownerId) === String(candidate._id)
     );
@@ -176,47 +150,32 @@ export const addEventMiddleware = async (
       assignedWorker = candidate;
       break;
     }
-    index = (index + 1) % totalWorkers;
+    index++;
   }
 
   if (!assignedWorker) {
-    console.warn("No available worker. Overlapping:", overlappingAppointments);
-    console.warn("Requested slot:", formattedStart, "→", formattedEnd);
     return next(new AppError("No available workers for this time slot.", 409));
   }
 
-  const totalBooked = overlappingAppointments.length + 1;
-  const isFullyBooked = totalBooked >= workers.length;
-
-  const updatedEvents = [...events];
-  if (isFullyBooked) {
-    const slotIndex = updatedEvents.findIndex(
-      (e) =>
-        e.title === "Available Slot" &&
-        format(parseISO(e.start), "yyyy-MM-dd HH:mm") === formattedStart &&
-        format(parseISO(e.end), "yyyy-MM-dd HH:mm") === formattedEnd
-    );
-    if (slotIndex !== -1) {
-      updatedEvents.splice(slotIndex, 1);
-    }
-  }
-
-  const newAppointment: CalendarEventInput = {
-    _id: new mongoose.Types.ObjectId(),
+  // Create a new Slot document for the appointment
+  const newBookedSlot = await SlotModel.create({
     title: `Booked Appointment with ${assignedWorker.name}`,
     description: eventData.description || "",
-    start: formattedStart,
-    end: formattedEnd,
+    start: slot.start,
+    end: slot.end,
     calendarId: "booked",
     ownerId: assignedWorker._id,
     clientId: eventData.clientId ?? user?._id ?? `guest-${Date.now()}`,
     clientName: eventData.clientName ?? user?.name ?? "Guest",
-  };
+    visibility: slot.visibility,
+  });
 
-  updatedEvents.push(newAppointment);
+  // Decrement capacity of original slot
+  slot.remainingCapacity -= 1;
+  await slot.save();
 
-  res.locals.updatedEvents = updatedEvents;
-  res.locals.updatedAppointment = newAppointment;
+  res.locals.updatedSlot = slot;
+  res.locals.bookedSlot = newBookedSlot;
   res.locals.lastAssignedIndex = (index + 1) % totalWorkers;
 
   next();
