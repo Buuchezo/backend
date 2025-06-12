@@ -39,6 +39,42 @@ export const getSlot = catchAsync(
     });
   }
 );
+
+export const updateSlot = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const slotId = req.params.id;
+    const { eventData } = req.body;
+
+    if (!eventData) {
+      return next(new AppError("Missing eventData in request body", 400));
+    }
+
+    // Attempt to replace slot with new data
+    const updatedSlot = await SlotModel.findByIdAndUpdate(
+      slotId,
+      {
+        ...eventData,
+      },
+      {
+        new: true,
+        runValidators: true,
+        overwrite: true, // 👈 ensures full replacement like PUT
+      }
+    );
+
+    if (!updatedSlot) {
+      return next(new AppError("No slot found with that id", 404));
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        appointment: updatedSlot,
+      },
+    });
+  }
+);
+
 export const getSlots = catchAsync(
   async (
     req: Request & { sanitizedQuery?: SanitizedQuery },
