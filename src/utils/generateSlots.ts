@@ -30,9 +30,10 @@ export async function generateSlotsMiddleware(
   const { year, month } = req.body;
 
   if (typeof year !== "number" || typeof month !== "number") {
-    return res
+    res
       .status(400)
       .json({ message: "Year and month must be provided as numbers." });
+    return;
   }
 
   // ✅ Fetch all workers
