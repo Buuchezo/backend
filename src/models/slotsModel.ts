@@ -33,6 +33,7 @@ const slotSchema = new Schema<ISlot>({
     enum: ["public", "internal"],
     default: "public",
   },
+  remainingCapacity: { type: Number, default: 0 },
 });
 
 export const SlotModel = mongoose.model<ISlot>("slot", slotSchema);

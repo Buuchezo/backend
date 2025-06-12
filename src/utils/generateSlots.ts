@@ -8,6 +8,8 @@ import {
 } from "date-fns";
 import { Request, Response, NextFunction } from "express";
 import { Types } from "mongoose";
+import { UserModel } from "../models/userModel";
+
 export interface CalendarEventInput {
   _id?: string | Types.ObjectId;
   title?: string;
@@ -20,7 +22,7 @@ export interface CalendarEventInput {
   clientName?: string;
 }
 
-export function generateSlotsMiddleware(
+export async function generateSlotsMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
@@ -28,12 +30,15 @@ export function generateSlotsMiddleware(
   const { year, month } = req.body;
 
   if (typeof year !== "number" || typeof month !== "number") {
-    res
+    return res
       .status(400)
       .json({ message: "Year and month must be provided as numbers." });
-    return;
   }
 
+  // ✅ Fetch all workers
+  const workers = await UserModel.find({ role: "worker" });
+  const workerCount = workers.length;
+  console.log(workerCount);
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(new Date(year, month)),
     end: endOfMonth(new Date(year, month)),
@@ -54,7 +59,7 @@ export function generateSlotsMiddleware(
       startHour = 9;
       endHour = 13;
     } else {
-      continue;
+      continue; // Skip Sundays
     }
 
     let current = new Date(date);
@@ -71,6 +76,12 @@ export function generateSlotsMiddleware(
         start: format(current, "yyyy-MM-dd HH:mm"),
         end: format(slotEnd, "yyyy-MM-dd HH:mm"),
         calendarId: "available",
+        remainingCapacity: workerCount, // ✅ Explicitly set
+        ownerId: undefined, // ✅ Ensure included, even if null
+        clientId: undefined,
+        clientName: undefined,
+        sharedWith: [],
+        visibility: "public",
       });
 
       current = slotEnd;
