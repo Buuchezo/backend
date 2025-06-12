@@ -118,6 +118,10 @@ export const addEventMiddleware = async (
     );
   }
 
+  if (!workers || workers.length === 0) {
+    return next(new AppError("No workers available in request body", 400));
+  }
+
   const formattedStart = format(parseISO(eventData.start), "yyyy-MM-dd HH:mm");
   const formattedEnd = format(parseISO(eventData.end), "yyyy-MM-dd HH:mm");
 
@@ -126,23 +130,32 @@ export const addEventMiddleware = async (
 
   const overlappingAppointments = events.filter((e) => {
     if (!e.title?.startsWith("Booked Appointment")) return false;
-
     try {
       const existingStart = parseISO(e.start);
       const existingEnd = parseISO(e.end);
       if (isNaN(existingStart.getTime()) || isNaN(existingEnd.getTime()))
         return false;
-
       return parsedStart < existingEnd && parsedEnd > existingStart;
     } catch {
       return false;
     }
   });
 
-  // Rotate to next worker starting from lastAssignedIndex
+  // Normalize lastAssignedIndex
+  const validLastIndex = Number.isInteger(lastAssignedIndex)
+    ? lastAssignedIndex
+    : 0;
+  let index = validLastIndex % workers.length;
+  console.log(
+    "📌 Using lastAssignedIndex:",
+    lastAssignedIndex,
+    "→ safe index:",
+    index
+  );
+
+  // Rotate to next available worker
   let assignedWorker: User | undefined = undefined;
   const totalWorkers = workers.length;
-  let index = lastAssignedIndex % totalWorkers;
 
   for (let i = 0; i < totalWorkers; i++) {
     const candidate = workers[index];
@@ -155,20 +168,19 @@ export const addEventMiddleware = async (
       );
       break;
     }
-
     const isBusy = overlappingAppointments.some(
       (appt) => String(appt.ownerId) === String(candidate._id)
     );
-
     if (!isBusy) {
       assignedWorker = candidate;
       break;
     }
-
     index = (index + 1) % totalWorkers;
   }
 
   if (!assignedWorker) {
+    console.warn("No available worker. Overlapping:", overlappingAppointments);
+    console.warn("Requested slot:", formattedStart, "→", formattedEnd);
     return next(new AppError("No available workers for this time slot.", 409));
   }
 
