@@ -43,7 +43,10 @@ export const getSlot = catchAsync(
 export const updateSlot = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const slotId = req.params.id;
-    const { eventData } = req.body;
+
+    const updatedFromMiddleware = res.locals.updatedAppointment;
+
+    const eventData = updatedFromMiddleware || req.body.eventData;
 
     if (!eventData) {
       return next(new AppError("Missing eventData in request body", 400));
