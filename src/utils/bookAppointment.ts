@@ -142,18 +142,30 @@ export const addEventMiddleware = async (
   // Rotate to next worker starting from lastAssignedIndex
   let assignedWorker: User | undefined = undefined;
   const totalWorkers = workers.length;
-  let index = lastAssignedIndex;
+  let index = lastAssignedIndex % totalWorkers;
+
   for (let i = 0; i < totalWorkers; i++) {
-    const candidate = workers[index % totalWorkers];
-    console.log("worker" + " " + candidate);
+    const candidate = workers[index];
+    if (!candidate) {
+      console.warn(
+        "❗ Invalid worker index:",
+        index,
+        "in workers array:",
+        workers
+      );
+      break;
+    }
+
     const isBusy = overlappingAppointments.some(
-      (appt) => appt.ownerId === candidate._id
+      (appt) => String(appt.ownerId) === String(candidate._id)
     );
+
     if (!isBusy) {
       assignedWorker = candidate;
       break;
     }
-    index++;
+
+    index = (index + 1) % totalWorkers;
   }
 
   if (!assignedWorker) {
