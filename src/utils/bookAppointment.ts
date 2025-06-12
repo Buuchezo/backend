@@ -145,7 +145,7 @@ export const addEventMiddleware = async (
   let index = lastAssignedIndex;
   for (let i = 0; i < totalWorkers; i++) {
     const candidate = workers[index % totalWorkers];
-    console.log(candidate)
+    console.log("worker" + " " + candidate);
     const isBusy = overlappingAppointments.some(
       (appt) => appt.ownerId === candidate._id
     );
