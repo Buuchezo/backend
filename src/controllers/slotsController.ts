@@ -52,6 +52,10 @@ export const updateSlot = catchAsync(
       return next(new AppError("Missing eventData in request body", 400));
     }
 
+    if ("_id" in eventData) {
+      delete eventData._id;
+    }
+
     // Attempt to replace slot with new data
     const updatedSlot = await SlotModel.findByIdAndUpdate(
       slotId,
