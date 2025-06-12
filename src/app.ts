@@ -159,7 +159,7 @@ const limiter = rateLimit({
 app.use("/api", limiter);
 
 //Body parser
-app.use(express.json({ limit: "10kb" }));
+app.use(express.json({ limit: "1mb" }));
 
 //Data sanitisation against NoSql query injection
 
