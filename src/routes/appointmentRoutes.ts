@@ -9,7 +9,7 @@ import {
   deleteAppointment,
 } from '../controllers/appointmentsController'
 
-import { bookAppointmentMiddleware } from '../utils/bookAppointment'
+import { addEventMiddleware } from '../utils/bookAppointment'
 import { updateEventMiddleware } from '../utils/updateBookedAppointment'
 import { reassignAppointmentsMiddleware } from '../utils/reassignWorker'
 import { protect, restrictTo } from '../controllers/authenticationController'
@@ -29,7 +29,7 @@ export async function conditionalAppointmentHandler(
   }
 
   if (calendarId === 'available') {
-    await bookAppointmentMiddleware(req, res, next)
+    await addEventMiddleware(req, res, next)
     return
   }
 
