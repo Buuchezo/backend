@@ -7,8 +7,9 @@ import {
   startOfMonth,
 } from "date-fns";
 import { Request, Response, NextFunction } from "express";
+import { Types } from "mongoose";
 export interface CalendarEventInput {
-  _id?: string;
+  _id?: string | Types.ObjectId;
   title?: string;
   description?: string;
   start: string;

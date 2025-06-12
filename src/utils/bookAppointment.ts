@@ -5,6 +5,7 @@ import { UserModel } from "../models/userModel";
 import { CalendarEventInput } from "./generateSlots";
 import { User } from "../app";
 import { AppError } from "./appErrorr";
+import mongoose from "mongoose";
 
 function normalizeToScheduleXFormat(datetime: string): string {
   try {
@@ -201,7 +202,7 @@ export const addEventMiddleware = async (
   }
 
   const newAppointment: CalendarEventInput = {
-    _id: Date.now().toString(),
+    _id: new mongoose.Types.ObjectId(),
     title: `Booked Appointment with ${assignedWorker.name}`,
     description: eventData.description || "",
     start: formattedStart,
