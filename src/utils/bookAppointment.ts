@@ -126,14 +126,24 @@ export const addEventMiddleware = async (
 
   const overlappingAppointments = events.filter((e) => {
     if (!e.title?.startsWith("Booked Appointment")) return false;
-    const existingStart = parseISO(e.start);
-    const existingEnd = parseISO(e.end);
-    return parsedStart < existingEnd && parsedEnd > existingStart;
+
+    try {
+      const existingStart = parseISO(e.start);
+      const existingEnd = parseISO(e.end);
+      if (isNaN(existingStart.getTime()) || isNaN(existingEnd.getTime()))
+        return false;
+
+      return parsedStart < existingEnd && parsedEnd > existingStart;
+    } catch {
+      return false;
+    }
   });
 
   // Rotate to next worker starting from lastAssignedIndex
   let assignedWorker: User | undefined = undefined;
+  console.log(assignedWorker);
   const totalWorkers = workers.length;
+  console.log(totalWorkers);
   let index = lastAssignedIndex;
   for (let i = 0; i < totalWorkers; i++) {
     const candidate = workers[index % totalWorkers];
