@@ -4,6 +4,7 @@ import { AppointmentModel } from "../models/appointmentModel";
 import { UserModel } from "../models/userModel";
 import { CalendarEventInput } from "./generateSlots";
 import { User } from "../app";
+import { AppError } from "./appErrorr";
 
 function normalizeToScheduleXFormat(datetime: string): string {
   try {
@@ -104,10 +105,16 @@ export const addEventMiddleware = async (
     sickWorkers,
   }: {
     sickWorkerId: string;
-    events: CalendarEventInput[];
+    events?: CalendarEventInput[];
     workers: User[];
     sickWorkers: string[];
   } = req.body;
+
+  if (!Array.isArray(originalEvents)) {
+    return next(
+      new AppError("Missing or invalid 'events' array in request body", 400)
+    );
+  }
 
   let events = [...originalEvents];
 
