@@ -127,15 +127,15 @@ export interface CalendarEventInput {
 }
 
 export interface User {
-  id: string;
+  _id: string;
   name: string;
   role: "user" | "worker" | "admin";
 }
 
-export interface Worker {
-  id: string;
-  name: string;
-}
+// export interface Worker {
+//   id: string;
+//   name: string;
+// }
 
 const app = express();
 

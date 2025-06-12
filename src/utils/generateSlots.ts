@@ -8,11 +8,15 @@ import {
 } from "date-fns";
 import { Request, Response, NextFunction } from "express";
 export interface CalendarEventInput {
-  title: string;
-  description: string;
+  _id?: string;
+  title?: string;
+  description?: string;
   start: string;
   end: string;
-  calendarId: string;
+  calendarId?: string;
+  ownerId?: string;
+  clientId?: string;
+  clientName?: string;
 }
 
 export function generateSlotsMiddleware(
