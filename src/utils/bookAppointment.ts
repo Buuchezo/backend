@@ -99,104 +99,91 @@ export const addEventMiddleware = async (
   next: NextFunction
 ): Promise<void> => {
   const {
-    sickWorkerId,
-    events: originalEvents,
+    eventData,
+    events,
+    user,
     workers,
-    sickWorkers,
+    lastAssignedIndex,
   }: {
-    sickWorkerId: string;
+    eventData: CalendarEventInput;
     events?: CalendarEventInput[];
+    user: User | null;
     workers: User[];
-    sickWorkers: string[];
+    lastAssignedIndex: number;
   } = req.body;
 
-  if (!Array.isArray(originalEvents)) {
+  if (!Array.isArray(events)) {
     return next(
       new AppError("Missing or invalid 'events' array in request body", 400)
     );
   }
 
-  let events = [...originalEvents];
+  const formattedStart = format(parseISO(eventData.start), "yyyy-MM-dd HH:mm");
+  const formattedEnd = format(parseISO(eventData.end), "yyyy-MM-dd HH:mm");
 
-  const appointmentsToReassign = events.filter(
-    (e) =>
-      e.ownerId === sickWorkerId && e.title?.startsWith("Booked Appointment")
-  );
+  const parsedStart = parseISO(formattedStart);
+  const parsedEnd = parseISO(formattedEnd);
 
-  for (const appointment of appointmentsToReassign) {
-    const start = parseISO(appointment.start);
-    const end = parseISO(appointment.end);
+  const overlappingAppointments = events.filter((e) => {
+    if (!e.title?.startsWith("Booked Appointment")) return false;
+    const existingStart = parseISO(e.start);
+    const existingEnd = parseISO(e.end);
+    return parsedStart < existingEnd && parsedEnd > existingStart;
+  });
 
-    const availableWorker = workers.find(
-      (w) =>
-        w._id !== sickWorkerId &&
-        !events.some(
-          (e) =>
-            e.ownerId === w._id &&
-            parseISO(e.start) < end &&
-            parseISO(e.end) > start
-        )
+  // Rotate to next worker starting from lastAssignedIndex
+  let assignedWorker: User | undefined = undefined;
+  const totalWorkers = workers.length;
+  let index = lastAssignedIndex;
+  for (let i = 0; i < totalWorkers; i++) {
+    const candidate = workers[index % totalWorkers];
+    const isBusy = overlappingAppointments.some(
+      (appt) => appt.ownerId === candidate._id
     );
+    if (!isBusy) {
+      assignedWorker = candidate;
+      break;
+    }
+    index++;
+  }
 
-    if (availableWorker) {
-      appointment.ownerId = availableWorker._id;
-      appointment.title = `Booked Appointment with ${availableWorker.name}`;
-    } else {
-      let reassigned = false;
-      for (const altWorker of workers.filter((w) => w._id !== sickWorkerId)) {
-        const candidateSlots = events.filter(
-          (e) =>
-            e.title === "Available Slot" && !sickWorkers.includes(altWorker._id)
-        );
+  if (!assignedWorker) {
+    return next(new AppError("No available workers for this time slot.", 409));
+  }
 
-        for (const slot of candidateSlots) {
-          const slotStart = parseISO(slot.start);
-          const durationMinutes = (end.getTime() - start.getTime()) / 60000;
-          const slotEnd = addMinutes(slotStart, durationMinutes);
+  const totalBooked = overlappingAppointments.length + 1;
+  const isFullyBooked = totalBooked >= workers.length;
 
-          const conflict = events.some(
-            (e) =>
-              e.ownerId === altWorker._id &&
-              parseISO(e.start) < slotEnd &&
-              parseISO(e.end) > slotStart
-          );
-
-          if (!conflict) {
-            const index = events.findIndex((ev) => ev._id === appointment._id);
-            if (index !== -1) events.splice(index, 1);
-
-            const slotsToRemove = events.filter(
-              (e) =>
-                e.title === "Available Slot" &&
-                parseISO(e.start) >= slotStart &&
-                parseISO(e.end) <= slotEnd
-            );
-            events = events.filter((e) => !slotsToRemove.includes(e));
-
-            const newAppointment = {
-              ...appointment,
-              start: format(slotStart, "yyyy-MM-dd HH:mm"),
-              end: format(slotEnd, "yyyy-MM-dd HH:mm"),
-              ownerId: altWorker._id,
-              title: `Booked Appointment with ${altWorker.name}`,
-            };
-
-            events.push(newAppointment);
-            res.locals.updatedAppointment = newAppointment;
-            reassigned = true;
-            break;
-          }
-        }
-
-        if (reassigned) break;
-      }
+  const updatedEvents = [...events];
+  if (isFullyBooked) {
+    const slotIndex = updatedEvents.findIndex(
+      (e) =>
+        e.title === "Available Slot" &&
+        format(parseISO(e.start), "yyyy-MM-dd HH:mm") === formattedStart &&
+        format(parseISO(e.end), "yyyy-MM-dd HH:mm") === formattedEnd
+    );
+    if (slotIndex !== -1) {
+      updatedEvents.splice(slotIndex, 1);
     }
   }
 
-  res.locals.updatedEvents = events.filter(
-    (e) =>
-      !(e.ownerId === sickWorkerId && e.title?.startsWith("Booked Appointment"))
-  );
+  const newAppointment: CalendarEventInput = {
+    _id: Date.now().toString(),
+    title: `Booked Appointment with ${assignedWorker.name}`,
+    description: eventData.description || "",
+    start: formattedStart,
+    end: formattedEnd,
+    calendarId: "booked",
+    ownerId: assignedWorker._id,
+    clientId: eventData.clientId ?? user?._id ?? `guest-${Date.now()}`,
+    clientName: eventData.clientName ?? user?.name ?? "Guest",
+  };
+
+  updatedEvents.push(newAppointment);
+
+  res.locals.updatedEvents = updatedEvents;
+  res.locals.updatedAppointment = newAppointment;
+  res.locals.lastAssignedIndex = (index + 1) % totalWorkers;
 
   next();
 };
