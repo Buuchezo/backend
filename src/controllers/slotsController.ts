@@ -27,6 +27,8 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
 export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData, userId } = req.body;
+    console.log("📥 Received userId:", userId);
+    console.log("📥 typeof userId:", typeof userId);
 
     // Fetch user and worker data
     const user = await UserModel.findById(userId);
