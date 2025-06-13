@@ -104,6 +104,19 @@ export function addEventHelper({
         ? new mongoose.Types.ObjectId(user._id)
         : undefined;
 
+  // ✅ Rule 1: Prevent user from double booking the same slot
+  const userAlreadyBooked = overlappingAppointments.some(
+    (appt) =>
+      appt.clientId?.toString() === clientId?.toString() &&
+      appt.start === formattedStart &&
+      appt.end === formattedEnd
+  );
+
+  if (userAlreadyBooked) {
+    console.log("⛔️ User has already booked this slot.");
+    return null;
+  }
+
   // Create the new booked appointment event
   const newEvent: CalendarEventInput = {
     id: newObjectId.toString(), // for frontend
