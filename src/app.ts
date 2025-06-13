@@ -4,7 +4,7 @@ import xss from "xss";
 import cors from "cors";
 
 import morgan from "morgan";
-import slotsRouter from "./routes/slotsRoutes"
+import slotsRouter from "./routes/slotsRoutes";
 import userRouter from "./routes/userRoutes";
 import appointmentRouter from "./routes/appointmentRoutes";
 import internalEventsRouter from "./routes/internalEventsRoutes";
@@ -114,18 +114,18 @@ export const hppSanitizer = (whitelist: string[] = []) => {
   };
 };
 export interface CalendarEventInput {
-  id?: string            // frontend-friendly ID
-  _id?: Types.ObjectId   // MongoDB ID (for backend use)
-  title: string
-  description: string
-  start: string
-  end: string
-  calendarId?: 'booked' | 'available';
-  ownerId?: Types.ObjectId | string
-  clientId?: Types.ObjectId | string
-  clientName?: string
-  sharedWith?: (Types.ObjectId | string)[]
-  visibility?: 'public' | 'internal'
+  id?: string; // frontend-friendly ID
+  _id?: Types.ObjectId; // MongoDB ID (for backend use)
+  title: string;
+  description: string;
+  start: string;
+  end: string;
+  calendarId?: "booked" | "available";
+  ownerId?: Types.ObjectId | string;
+  clientId?: Types.ObjectId | string;
+  clientName?: string;
+  sharedWith?: (Types.ObjectId | string)[];
+  visibility?: "public" | "internal";
 }
 
 export interface User {
@@ -141,6 +141,7 @@ export interface User {
 // }
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(cors());
 
