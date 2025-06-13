@@ -11,8 +11,8 @@ import {
 import { addEventMiddleware } from "../utils/bookAppointment";
 const router = express.Router();
 
-router.post("/", generateSlotsMiddleware, createSlots);
 router.post("/:id", createAppointment);
+router.post("/", generateSlotsMiddleware, createSlots);
 router.get("/", getSlots);
 router.get("/:id", getSlot);
 router.patch("/:id", addEventMiddleware, updateSlot);

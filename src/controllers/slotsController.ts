@@ -26,12 +26,14 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
 
 export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
+    console.log("✅ createAppointment route hit");
     const { eventData, userId } = req.body;
     console.log("📥 Received userId:", userId);
     console.log("📥 typeof userId:", typeof userId);
 
     // Fetch user and worker data
     const user = await UserModel.findById(userId);
+    console.log(user)
     if (!user) {
       res.status(404).json({ error: "User not found" });
       return;
