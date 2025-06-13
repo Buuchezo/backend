@@ -52,14 +52,24 @@ export function addEventHelper({
     return parsedStart < existingEnd && parsedEnd > existingStart;
   });
 
-  // Find a free worker for this time slot
-  const freeWorker = workers.find(
-    (worker) =>
-      !overlappingAppointments.some(
-        (appt) => appt.ownerId?.toString() === worker._id.toString()
-      )
-  );
+  // Rotate through workers starting from lastAssignedIndex
+  let freeWorker: IUser | undefined;
+  for (let i = 0; i < workers.length; i++) {
+    const index = (lastAssignedIndex + i) % workers.length;
+    const worker = workers[index];
+    console.log(worker);
 
+    const isBusy = overlappingAppointments.some(
+      (appt) => appt.ownerId?.toString() === worker._id.toString()
+    );
+
+    if (!isBusy) {
+      freeWorker = worker;
+      lastAssignedIndex = (index + 1) % workers.length; // update for next use
+      break;
+    }
+  }
+  console.log(freeWorker);
   if (!freeWorker) {
     return null; // All workers are already booked for this time slot
   }
