@@ -183,7 +183,7 @@ export const updateEventMiddleware = async (
 
   const assignedWorker = workers.find((w) => w._id === original.ownerId);
   const dynamicTitle = assignedWorker
-    ? `Booked Appointment with ${assignedWorker.name}`
+    ? `Booked Appointment with ${assignedWorker.firstName }`
     : "Booked Appointment";
 
   const updatedEvents: CalendarEventInput[] = [

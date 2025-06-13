@@ -188,7 +188,7 @@ export const reassignAppointmentsMiddleware = async (req: Request, res: Response
 
     if (availableWorker) {
       appointment.ownerId = availableWorker._id
-      appointment.title = `Booked Appointment with ${availableWorker.name}`
+      appointment.title = `Booked Appointment with ${availableWorker.firstName }`
     } else {
       let reassigned = false
       for (const altWorker of workers.filter((w) => w._id !== sickWorkerId)) {
@@ -225,7 +225,7 @@ export const reassignAppointmentsMiddleware = async (req: Request, res: Response
               start: format(slotStart, 'yyyy-MM-dd HH:mm'),
               end: format(slotEnd, 'yyyy-MM-dd HH:mm'),
               ownerId: altWorker._id,
-              title: `Booked Appointment with ${altWorker.name}`,
+              title: `Booked Appointment with ${altWorker.firstName }`,
             })
 
             reassigned = true
