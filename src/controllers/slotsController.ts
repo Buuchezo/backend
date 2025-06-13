@@ -27,13 +27,13 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
 export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
     console.log("✅ createAppointment route hit");
-    const { eventData, userId } = req.body;
+    const { eventData, userId, lastAssignedIndex } = req.body;
     console.log("📥 Received userId:", userId);
     console.log("📥 typeof userId:", typeof userId);
 
     // Fetch user and worker data
     const user = await UserModel.findById(userId);
-    console.log()
+    console.log();
     if (!user) {
       res.status(404).json({ error: "User not found" });
       return;
@@ -48,7 +48,7 @@ export const createAppointment = catchAsync(
       events,
       user,
       workers,
-      lastAssignedIndex: 0, // You can store/manage this if rotating workers
+      lastAssignedIndex: lastAssignedIndex || 0, // You can store/manage this if rotating workers
     });
 
     if (!result) {
@@ -70,6 +70,7 @@ export const createAppointment = catchAsync(
         ...result.newEvent,
         id: savedEvent._id.toString(), // Ensure frontend receives the correct ID
       },
+      lastAssignedIndex: result.lastAssignedIndex,
     });
     return;
   }
