@@ -3,14 +3,14 @@ import validator from "validator";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
-// Interface to type the User document
+// Interface
 export interface IUser extends Document {
-  _id: string;
+  _id: mongoose.Types.ObjectId; // ✅ Now ObjectId, not string
   firstName: string;
   lastName: string;
   email: string;
   password: string;
-  passwordConfirm?: string; // For validation only
+  passwordConfirm?: string;
   passwordChangedAt?: Date;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
@@ -21,8 +21,8 @@ export interface IUser extends Document {
   createPasswordResetToken(): string;
 }
 
+// ✅ Removed manual _id declaration — Mongoose will auto-create ObjectId
 const userSchema = new Schema<IUser>({
-  _id: { type: String },
   firstName: { type: String, required: [true, "Must have first name"] },
   lastName: { type: String, required: [true, "Must have second name"] },
   email: {

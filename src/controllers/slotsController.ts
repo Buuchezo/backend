@@ -33,7 +33,7 @@ export const createAppointment = catchAsync(
 
     // Fetch user and worker data
     const user = await UserModel.findById(userId);
-    console.log(user)
+    console.log()
     if (!user) {
       res.status(404).json({ error: "User not found" });
       return;
