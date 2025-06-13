@@ -159,14 +159,14 @@ export const addEventMiddleware = async (
 
   // Create a new Slot document for the appointment
   const newBookedSlot = await SlotModel.create({
-    title: `Booked Appointment with ${assignedWorker.name}`,
+    title: `Booked Appointment with ${assignedWorker.firstName }`,
     description: eventData.description || "",
     start: slot.start,
     end: slot.end,
     calendarId: "booked",
     ownerId: assignedWorker._id,
     clientId: eventData.clientId ?? user?._id ?? `guest-${Date.now()}`,
-    clientName: eventData.clientName ?? user?.name ?? "Guest",
+    clientName: eventData.clientName ?? user?.firstName ?? "Guest",
     visibility: slot.visibility,
   });
 
