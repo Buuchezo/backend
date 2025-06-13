@@ -126,6 +126,7 @@ export interface CalendarEventInput {
   clientName?: string;
   sharedWith?: (Types.ObjectId | string)[];
   visibility?: "public" | "internal";
+  remainingCapacity?: number;
 }
 
 export interface User {
