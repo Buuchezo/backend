@@ -286,135 +286,163 @@ export function addEventHelper({
   workers,
   lastAssignedIndex,
 }: {
-  eventData: CalendarEventInput;
-  events: CalendarEventInput[];
-  user: IUser | null;
-  workers: IUser[];
-  lastAssignedIndex: number;
+  eventData: CalendarEventInput
+  events: CalendarEventInput[]
+  user: IUser | null
+  workers: IUser[]
+  lastAssignedIndex: number
 }): {
-  updatedEvents: CalendarEventInput[];
-  lastAssignedIndex: number;
-  newEvent: CalendarEventInput;
+  updatedEvents: CalendarEventInput[]
+  lastAssignedIndex: number
+  newEvent: CalendarEventInput
 } | null {
-  const formattedStart = normalizeToScheduleXFormat(eventData.start);
-  const formattedEnd = normalizeToScheduleXFormat(eventData.end);
+  const formattedStart = normalizeToScheduleXFormat(eventData.start)
+  const formattedEnd = normalizeToScheduleXFormat(eventData.end)
 
-  const parsedStart = parse(formattedStart, "yyyy-MM-dd HH:mm", new Date());
-  const parsedEnd = parse(formattedEnd, "yyyy-MM-dd HH:mm", new Date());
+  const parsedStart = parse(formattedStart, 'yyyy-MM-dd HH:mm', new Date())
+  const parsedEnd = parse(formattedEnd, 'yyyy-MM-dd HH:mm', new Date())
+
+  console.log('🆕 New booking request:', {
+    formattedStart,
+    formattedEnd,
+    parsedStart,
+    parsedEnd,
+  })
 
   const normalizedEvents = events.map((e) => ({
     ...e,
     start:
-      typeof e.start === "string" ? e.start : new Date(e.start).toISOString(),
-    end: typeof e.end === "string" ? e.end : new Date(e.end).toISOString(),
-  }));
+      typeof e.start === 'string' ? e.start : new Date(e.start).toISOString(),
+    end: typeof e.end === 'string' ? e.end : new Date(e.end).toISOString(),
+  }))
+
+  // Log all existing appointments
+  normalizedEvents
+    .filter((e) => e.title?.startsWith('Booked Appointment'))
+    .forEach((e) => {
+      console.log('📦 Existing Booked Event:', {
+        _id: e._id?.toString(),
+        clientId: e.clientId?.toString(),
+        ownerId: e.ownerId?.toString(),
+        title: e.title,
+        start: e.start,
+        end: e.end,
+      })
+    })
 
   const overlappingAppointments = normalizedEvents.filter((e) => {
-    if (!e.title?.startsWith("Booked Appointment")) return false;
-    const existingStart = parse(e.start, "yyyy-MM-dd HH:mm", new Date());
-    const existingEnd = parse(e.end, "yyyy-MM-dd HH:mm", new Date());
-    return parsedStart < existingEnd && parsedEnd > existingStart;
-  });
+    if (!e.title?.startsWith('Booked Appointment')) return false
+    const existingStart = parse(e.start, 'yyyy-MM-dd HH:mm', new Date())
+    const existingEnd = parse(e.end, 'yyyy-MM-dd HH:mm', new Date())
+    return parsedStart < existingEnd && parsedEnd > existingStart
+  })
 
   const clientId =
     eventData.clientId && mongoose.Types.ObjectId.isValid(eventData.clientId)
       ? new mongoose.Types.ObjectId(eventData.clientId)
       : user && mongoose.Types.ObjectId.isValid(user._id)
         ? new mongoose.Types.ObjectId(user._id)
-        : undefined;
+        : undefined
 
-  // ✅ NEW: Prevent the same client from booking multiple overlapping appointments
-  const userAlreadyBooked = normalizedEvents.some((e) => {
-    const sameClient = e.clientId?.toString() === clientId?.toString();
-    const existingStart = parse(e.start, "yyyy-MM-dd HH:mm", new Date());
-    const existingEnd = parse(e.end, "yyyy-MM-dd HH:mm", new Date());
-    const timeOverlap = parsedStart < existingEnd && parsedEnd > existingStart;
+  console.log('👤 Resolved Client ID:', clientId?.toString())
 
-    if (sameClient && timeOverlap) {
-      console.log("⛔️ Overlapping booking found for same client:", {
-        eventId: e._id?.toString(),
-        existingStart,
-        existingEnd,
-      });
-    }
-
-    return sameClient && timeOverlap;
-  });
-
-  if (userAlreadyBooked) {
-    console.log("⛔️ User has already booked an overlapping slot.");
-    return null;
+  if (!clientId) {
+    console.log('❌ Invalid or missing client ID — aborting booking.')
+    return null
   }
 
-  let freeWorker: IUser | undefined;
+  const userAlreadyBooked = normalizedEvents.some((e) => {
+    const sameClient = e.clientId?.toString() === clientId.toString()
+    const existingStart = parse(e.start, 'yyyy-MM-dd HH:mm', new Date())
+    const existingEnd = parse(e.end, 'yyyy-MM-dd HH:mm', new Date())
+    const timeOverlap = parsedStart < existingEnd && parsedEnd > existingStart
+
+    console.log('🔍 Checking booking conflict:', {
+      eventId: e._id?.toString(),
+      eventClientId: e.clientId?.toString(),
+      isSameClient: sameClient,
+      timeOverlap,
+      existingStart,
+      existingEnd,
+    })
+
+    return sameClient && timeOverlap
+  })
+
+  if (userAlreadyBooked) {
+    console.log('⛔️ User has already booked an overlapping time slot.')
+    return null
+  }
+
+  let freeWorker: IUser | undefined
   for (let i = 0; i < workers.length; i++) {
-    const index = (lastAssignedIndex + i) % workers.length;
-    const worker = workers[index];
+    const index = (lastAssignedIndex + i) % workers.length
+    const worker = workers[index]
 
     const isBusy = overlappingAppointments.some(
       (appt) => appt.ownerId?.toString() === worker._id.toString()
-    );
+    )
 
     if (!isBusy) {
-      freeWorker = worker;
-      lastAssignedIndex = (index + 1) % workers.length;
-      break;
+      freeWorker = worker
+      lastAssignedIndex = (index + 1) % workers.length
+      break
     }
   }
 
+  console.log('👷 Assigned Worker:', freeWorker)
+
   if (!freeWorker) {
-    return null;
+    console.log('🚫 No available worker for this time slot.')
+    return null
   }
 
-  const totalBooked = overlappingAppointments.length + 1;
-  const isFullyBooked = totalBooked >= workers.length;
-
-  const updatedEvents = [...normalizedEvents];
+  const updatedEvents = [...normalizedEvents]
 
   const availableSlotIndex = updatedEvents.findIndex(
     (e) =>
-      e.title === "Available Slot" &&
+      e.title === 'Available Slot' &&
       normalizeToScheduleXFormat(e.start) === formattedStart &&
       normalizeToScheduleXFormat(e.end) === formattedEnd
-  );
+  )
 
   if (availableSlotIndex !== -1) {
-    const slot = updatedEvents[availableSlotIndex];
-    const currentCap = slot.remainingCapacity ?? workers.length;
-    const newCap = Math.max(0, currentCap - 1);
+    const slot = updatedEvents[availableSlotIndex]
+    const currentCap = slot.remainingCapacity ?? workers.length
+    const newCap = Math.max(0, currentCap - 1)
 
     if (newCap <= 0) {
-      updatedEvents.splice(availableSlotIndex, 1);
+      updatedEvents.splice(availableSlotIndex, 1)
     } else {
       updatedEvents[availableSlotIndex] = {
         ...slot,
         remainingCapacity: newCap,
-      };
+      }
     }
   }
 
-  const newObjectId = new mongoose.Types.ObjectId();
+  const newObjectId = new mongoose.Types.ObjectId()
 
   const newEvent: CalendarEventInput = {
     id: newObjectId.toString(),
     _id: newObjectId,
     title: `Booked Appointment with ${freeWorker.firstName} ${freeWorker.lastName}`,
-    description: eventData.description || "",
+    description: eventData.description || '',
     start: formattedStart,
     end: formattedEnd,
-    calendarId: "booked",
+    calendarId: 'booked',
     ownerId: freeWorker._id,
     clientId,
     clientName:
       eventData.clientName ??
-      `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""}`.trim(),
-  };
+      `${user?.firstName ?? 'Guest'} ${user?.lastName ?? ''}`.trim(),
+  }
 
-  updatedEvents.push(newEvent);
+  updatedEvents.push(newEvent)
 
   return {
     updatedEvents,
     lastAssignedIndex,
     newEvent,
-  };
+  }
 }
