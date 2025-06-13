@@ -296,13 +296,13 @@ export function addEventHelper({
   lastAssignedIndex: number;
   newEvent: CalendarEventInput;
 } | null {
-  console.log("🟢 Incoming eventData:", eventData);
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
-
+  
   const parsedStart = parse(formattedStart, "yyyy-MM-dd HH:mm", new Date());
   const parsedEnd = parse(formattedEnd, "yyyy-MM-dd HH:mm", new Date());
-
+  
+  console.log("🟢 Incoming eventData:", eventData);
   console.log("🆕 New booking request:", {
     formattedStart,
     formattedEnd,
@@ -358,14 +358,14 @@ export function addEventHelper({
     const existingEnd = parse(e.end, "yyyy-MM-dd HH:mm", new Date());
     const timeOverlap = parsedStart < existingEnd && parsedEnd > existingStart;
 
-    console.log("🔍 Checking booking conflict:", {
-      eventId: e._id?.toString(),
-      eventClientId: e.clientId?.toString(),
-      isSameClient: sameClient,
-      timeOverlap,
-      existingStart,
-      existingEnd,
-    });
+    // console.log("🔍 Checking booking conflict:", {
+    //   eventId: e._id?.toString(),
+    //   eventClientId: e.clientId?.toString(),
+    //   isSameClient: sameClient,
+    //   timeOverlap,
+    //   existingStart,
+    //   existingEnd,
+    // });
 
     return sameClient && timeOverlap;
   });
