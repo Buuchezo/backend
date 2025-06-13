@@ -298,11 +298,10 @@ export function addEventHelper({
 } | null {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
-  
+
   const parsedStart = parse(formattedStart, "yyyy-MM-dd HH:mm", new Date());
   const parsedEnd = parse(formattedEnd, "yyyy-MM-dd HH:mm", new Date());
-  
-  console.log("🟢 Incoming eventData:", eventData);
+
   console.log("🆕 New booking request:", {
     formattedStart,
     formattedEnd,
@@ -316,20 +315,6 @@ export function addEventHelper({
       typeof e.start === "string" ? e.start : new Date(e.start).toISOString(),
     end: typeof e.end === "string" ? e.end : new Date(e.end).toISOString(),
   }));
-
-  // Log all existing appointments
-  normalizedEvents
-    .filter((e) => e.title?.startsWith("Booked Appointment"))
-    .forEach((e) => {
-      console.log("📦 Existing Booked Event:", {
-        _id: e._id?.toString(),
-        clientId: e.clientId?.toString(),
-        ownerId: e.ownerId?.toString(),
-        title: e.title,
-        start: e.start,
-        end: e.end,
-      });
-    });
 
   const overlappingAppointments = normalizedEvents.filter((e) => {
     if (!e.title?.startsWith("Booked Appointment")) return false;
@@ -348,26 +333,30 @@ export function addEventHelper({
   console.log("👤 Resolved Client ID:", clientId?.toString());
 
   if (!clientId) {
-    console.log("❌ Invalid or missing client ID — aborting booking.");
+    console.log("❌ No valid client ID — cannot proceed with booking");
     return null;
   }
 
+  // ✅ Overlap check: includes fallback to legacy clientName
   const userAlreadyBooked = normalizedEvents.some((e) => {
     const sameClient = e.clientId?.toString() === clientId.toString();
+    const legacyNameMatch = e.clientName === eventData.clientName;
+
     const existingStart = parse(e.start, "yyyy-MM-dd HH:mm", new Date());
     const existingEnd = parse(e.end, "yyyy-MM-dd HH:mm", new Date());
     const timeOverlap = parsedStart < existingEnd && parsedEnd > existingStart;
 
-    // console.log("🔍 Checking booking conflict:", {
-    //   eventId: e._id?.toString(),
-    //   eventClientId: e.clientId?.toString(),
-    //   isSameClient: sameClient,
-    //   timeOverlap,
-    //   existingStart,
-    //   existingEnd,
-    // });
+    console.log("🔍 Checking booking conflict:", {
+      eventId: e._id?.toString(),
+      eventClientId: e.clientId?.toString(),
+      isSameClient: sameClient,
+      legacyNameMatch,
+      timeOverlap,
+      existingStart,
+      existingEnd,
+    });
 
-    return sameClient && timeOverlap;
+    return (sameClient || legacyNameMatch) && timeOverlap;
   });
 
   if (userAlreadyBooked) {
@@ -394,7 +383,6 @@ export function addEventHelper({
   console.log("👷 Assigned Worker:", freeWorker);
 
   if (!freeWorker) {
-    console.log("🚫 No available worker for this time slot.");
     return null;
   }
 
@@ -438,7 +426,9 @@ export function addEventHelper({
       eventData.clientName ??
       `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""}`.trim(),
   };
+  console.log(newEvent)
 
+  console.log("✅ Creating new event with clientId:", clientId?.toString());
   updatedEvents.push(newEvent);
 
   return {
