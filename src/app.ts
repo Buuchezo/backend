@@ -11,6 +11,7 @@ import internalEventsRouter from "./routes/internalEventsRoutes";
 import { AppError } from "./utils/appErrorr";
 import { errorController } from "./controllers/errorController";
 import helmet from "helmet";
+import { Types } from "mongoose";
 
 function sanitize(obj: Record<string, unknown>): void {
   for (const key in obj) {
@@ -113,22 +114,24 @@ export const hppSanitizer = (whitelist: string[] = []) => {
   };
 };
 export interface CalendarEventInput {
-  id: number;
-  title: string;
-  description: string;
-  start: string;
-  end: string;
-  calendarId?: string;
-  ownerId?: string;
-  clientId?: string;
-  clientName?: string;
-  sharedWith?: string[];
-  visibility?: "public" | "internal";
+  id?: string            // frontend-friendly ID
+  _id?: Types.ObjectId   // MongoDB ID (for backend use)
+  title: string
+  description: string
+  start: string
+  end: string
+  calendarId?: 'booked' | 'available';
+  ownerId?: Types.ObjectId | string
+  clientId?: Types.ObjectId | string
+  clientName?: string
+  sharedWith?: (Types.ObjectId | string)[]
+  visibility?: 'public' | 'internal'
 }
 
 export interface User {
   _id: string;
-  name: string;
+  firstName: string;
+  lastName: string;
   role: "user" | "worker" | "admin";
 }
 

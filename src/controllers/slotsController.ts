@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from "express";
 import { catchAsync } from "../utils/catchAsync";
 import { SlotModel } from "../models/slotsModel";
 import { AppError } from "../utils/appErrorr";
+import { UserModel } from "../models/userModel";
+import { addEventHelper } from "../utils/addEventHelper";
+import { convertToSlotModelInput } from "../utils/convertToSlotMode";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {
@@ -20,6 +23,53 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
     data: insertedSlots,
   });
 });
+
+export const createAppointment = catchAsync(
+  async (req: Request, res: Response) => {
+    const { eventData, userId } = req.body;
+
+    // Fetch user and worker data
+    const user = await UserModel.findById(userId);
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const workers = await UserModel.find({ role: "worker" });
+    const events = await SlotModel.find({}); // You can filter by date/time if needed
+
+    // Call addEventHelper to generate new appointment
+    const result = addEventHelper({
+      eventData,
+      events,
+      user,
+      workers,
+      lastAssignedIndex: 0, // You can store/manage this if rotating workers
+    });
+
+    if (!result) {
+      res
+        .status(400)
+        .json({ error: "All workers are booked for this time slot." });
+      return;
+    }
+
+    // Convert newEvent to a valid SlotModel input
+    const dbReadyEvent = convertToSlotModelInput(result.newEvent);
+
+    // Save the new booked appointment
+    const savedEvent = await SlotModel.create(dbReadyEvent);
+
+    res.status(201).json({
+      success: true,
+      event: {
+        ...result.newEvent,
+        id: savedEvent._id.toString(), // Ensure frontend receives the correct ID
+      },
+    });
+    return;
+  }
+);
 
 export const getSlot = catchAsync(
   async (
