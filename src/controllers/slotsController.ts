@@ -178,18 +178,30 @@ export const updateAppointment = catchAsync(async (req, res) => {
   const events = await SlotModel.find({});
 
   try {
-    const { updatedEvents, updatedAppointment } = updateEventHelperBackend({
-      eventData,
-      events,
-      workers,
-    });
+    const { updatedEvents, updatedAppointment, slotsToInsert } =
+      updateEventHelperBackend({
+        eventData,
+        events,
+        workers,
+      });
 
+    // Delete overlapping slots (excluding the updated appointment)
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
+      calendarId: "available",
     });
 
-    await SlotModel.insertMany(updatedEvents);
+    // Update the appointment in DB
+    await SlotModel.findByIdAndUpdate(
+      updatedAppointment._id,
+      updatedAppointment
+    );
+
+    // Insert only new available slots
+    if (slotsToInsert?.length) {
+      await SlotModel.insertMany(slotsToInsert);
+    }
 
     res.status(200).json({
       success: true,

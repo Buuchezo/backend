@@ -51,6 +51,7 @@ export function updateEventHelperBackend({
 }): {
   updatedEvents: CalendarEventInput[];
   updatedAppointment: CalendarEventInput;
+  slotsToInsert: CalendarEventInput[];
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
@@ -137,5 +138,9 @@ export function updateEventHelperBackend({
     ...afterSlots,
   ];
 
-  return { updatedEvents, updatedAppointment };
+  return {
+    updatedEvents: [...beforeSlots, ...afterSlots],
+    slotsToInsert: [...beforeSlots, ...afterSlots],
+    updatedAppointment,
+  };
 }
