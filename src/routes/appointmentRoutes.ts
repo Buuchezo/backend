@@ -10,7 +10,6 @@ import {
 } from '../controllers/appointmentsController'
 
 import { addEventMiddleware } from '../utils/bookAppointment'
-import { updateEventMiddleware } from '../utils/updateBookedAppointment'
 import { reassignAppointmentsMiddleware } from '../utils/reassignWorker'
 import { protect, restrictTo } from '../controllers/authenticationController'
 
@@ -33,10 +32,7 @@ export async function conditionalAppointmentHandler(
     return
   }
 
-  if (calendarId === 'booked') {
-    await updateEventMiddleware(req, res, next)
-    return
-  }
+ 
 
   res.status(400).json({ message: `Unsupported calendarId: ${calendarId}` })
 }
