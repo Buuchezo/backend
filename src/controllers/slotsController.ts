@@ -137,6 +137,7 @@ export const createAppointment = catchAsync(
       event: {
         ...result.newEvent,
         id: savedEvent._id.toString(),
+        _id: savedEvent._id.toString(),
       },
       lastAssignedIndex: result.lastAssignedIndex,
     });
