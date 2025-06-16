@@ -17,35 +17,39 @@ export async function reassignAppointmentsHelper(
       e.title?.startsWith("Booked Appointment")
   );
 
-  const updatedEvents = [...events];
-
   for (const appointment of appointmentsToReassign) {
     const start = parseISO(appointment.start);
     const end = parseISO(appointment.end);
 
-    const availableWorker = workers.find(
-      (w) =>
-        w._id.toString() !== workerId &&
-        !events.some(
-          (e) =>
-            e.ownerId?.toString() === w._id.toString() &&
-            parseISO(e.start) < end &&
-            parseISO(e.end) > start
-        )
-    );
+    // Shuffle workers for fair distribution
+    const availableWorkers = workers
+      .filter((w) => w._id.toString() !== workerId)
+      .sort(() => Math.random() - 0.5); // Randomize order
 
-    if (availableWorker) {
-      await SlotModel.findByIdAndUpdate(appointment._id, {
-        ownerId: availableWorker._id,
-        title: `Booked Appointment with ${availableWorker.firstName} ${availableWorker.lastName}`,
-      });
-      continue;
+    // Try to directly assign to a free worker
+    let reassigned = false;
+    for (const w of availableWorkers) {
+      const hasConflict = events.some(
+        (e) =>
+          e.ownerId?.toString() === w._id.toString() &&
+          parseISO(e.start) < end &&
+          parseISO(e.end) > start
+      );
+
+      if (!hasConflict) {
+        await SlotModel.findByIdAndUpdate(appointment._id, {
+          ownerId: w._id,
+          title: `Booked Appointment with ${w.firstName} ${w.lastName}`,
+        });
+        reassigned = true;
+        break;
+      }
     }
 
-    // Fallback strategy: Find matching available slot
-    for (const altWorker of workers.filter(
-      (w) => w._id.toString() !== workerId
-    )) {
+    if (reassigned) continue;
+
+    // Fallback: move to a different slot
+    for (const altWorker of availableWorkers) {
       const candidateSlots = events.filter((e) => e.title === "Available Slot");
 
       for (const slot of candidateSlots) {
@@ -61,16 +65,17 @@ export async function reassignAppointmentsHelper(
         );
 
         if (!conflict) {
-          // Delete original
+          // Delete original appointment
           await SlotModel.findByIdAndDelete(appointment._id);
 
-          // Remove conflicting slots
+          // Delete overlapping Available Slots (✅ KEY FIX)
           await SlotModel.deleteMany({
             title: "Available Slot",
-            start: { $gte: slot.start },
-            end: { $lte: format(slotEnd, "yyyy-MM-dd HH:mm") },
+            start: { $lt: format(slotEnd, "yyyy-MM-dd HH:mm") },
+            end: { $gt: format(slotStart, "yyyy-MM-dd HH:mm") },
           });
 
+          // Create new booked appointment
           await SlotModel.create({
             title: `Booked Appointment with ${altWorker.firstName} ${altWorker.lastName}`,
             start: format(slotStart, "yyyy-MM-dd HH:mm"),
@@ -80,9 +85,13 @@ export async function reassignAppointmentsHelper(
             clientId: appointment.clientId,
             clientName: appointment.clientName,
           });
+
+          reassigned = true;
           break;
         }
       }
+
+      if (reassigned) break;
     }
   }
 }
