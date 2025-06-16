@@ -93,7 +93,7 @@ export const createAppointment = catchAsync(
     const events = (await SlotModel.find({}).lean()).map((event) => ({
       ...event,
       clientId: event.clientId?.toString(),
-    }));// Consider filtering for relevant date range for performance
+    })); // Consider filtering for relevant date range for performance
 
     // 🛑 PRE-CHECK: Block duplicate booking by same user/client in overlapping timeslot
     const clientId = eventData.clientId?.toString() ?? user._id.toString();
@@ -238,3 +238,38 @@ export const getSlots = catchAsync(
     });
   }
 );
+
+export const deleteAppointment = catchAsync(async (req, res) => {
+  const eventId = req.params.id;
+
+  const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
+  if (!deletedEvent) {
+    res.status(404).json({ error: "Appointment not found" });
+    return;
+  }
+
+  const { start, end } = deletedEvent;
+
+  // Try to find matching available slot
+  const existingAvailable = await SlotModel.findOne({
+    start,
+    end,
+    calendarId: "available",
+  });
+
+  if (existingAvailable) {
+    existingAvailable.remainingCapacity =
+      (existingAvailable.remainingCapacity ?? 0) + 1;
+    await existingAvailable.save();
+  } else {
+    await SlotModel.create({
+      title: "Available Slot",
+      start,
+      end,
+      calendarId: "available",
+      remainingCapacity: 1,
+    });
+  }
+
+  res.status(200).json({ success: true });
+});
