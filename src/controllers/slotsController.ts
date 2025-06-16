@@ -233,10 +233,54 @@ export const getSlots = catchAsync(
   }
 );
 
+// export const deleteAppointment = catchAsync(async (req, res) => {
+//   const eventId = req.params.id;
+//   console.log("🗑️ Deleting appointment with ID:", eventId);
+
+//   const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
+//   if (!deletedEvent) {
+//     res.status(404).json({ error: "Appointment not found" });
+//     return;
+//   }
+
+//   const { start, end } = deletedEvent;
+
+//   // Get current number of workers (used as max capacity for slots)
+//   const workers = await UserModel.find({ role: "worker" });
+//   const workerCount = workers.length;
+
+//   // Find matching available slot
+//   const existingAvailable = await SlotModel.findOne({
+//     start,
+//     end,
+//     calendarId: "available",
+//   });
+
+//   if (existingAvailable) {
+//     const current = existingAvailable.remainingCapacity ?? 0;
+
+//     // Ensure we don't exceed the original max capacity
+//     existingAvailable.remainingCapacity = Math.min(current + 1, workerCount);
+//     await existingAvailable.save();
+//   } else {
+//     // If no existing slot, recreate a new available slot with 1 capacity
+//     await SlotModel.create({
+//       title: "Available Slot",
+//       start,
+//       end,
+//       calendarId: "available",
+//       remainingCapacity: 1,
+//     });
+//   }
+
+//   res.status(200).json({ success: true });
+// });
+
 export const deleteAppointment = catchAsync(async (req, res) => {
   const eventId = req.params.id;
   console.log("🗑️ Deleting appointment with ID:", eventId);
 
+  // 1. Delete the booked appointment
   const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
   if (!deletedEvent) {
     res.status(404).json({ error: "Appointment not found" });
@@ -245,11 +289,11 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
   const { start, end } = deletedEvent;
 
-  // Get current number of workers (used as max capacity for slots)
+  // 2. Fetch all workers to determine max capacity
   const workers = await UserModel.find({ role: "worker" });
   const workerCount = workers.length;
 
-  // Find matching available slot
+  // 3. Check if an available slot for this time already exists
   const existingAvailable = await SlotModel.findOne({
     start,
     end,
@@ -257,21 +301,34 @@ export const deleteAppointment = catchAsync(async (req, res) => {
   });
 
   if (existingAvailable) {
+    // ✅ Slot exists — just increment its capacity (capped at worker count)
     const current = existingAvailable.remainingCapacity ?? 0;
-
-    // Ensure we don't exceed the original max capacity
     existingAvailable.remainingCapacity = Math.min(current + 1, workerCount);
     await existingAvailable.save();
   } else {
-    // If no existing slot, recreate a new available slot with 1 capacity
-    await SlotModel.create({
-      title: "Available Slot",
+    // 4. Only create a new available slot if no other appointment exists for this time
+    const overlappingBooked = await SlotModel.findOne({
       start,
       end,
-      calendarId: "available",
-      remainingCapacity: 1,
+      calendarId: "booked",
     });
+
+    if (!overlappingBooked) {
+      // ✅ Safe to recreate an available slot
+      await SlotModel.create({
+        title: "Available Slot",
+        start,
+        end,
+        calendarId: "available",
+        remainingCapacity: 1,
+      });
+    } else {
+      console.log(
+        "🔁 Not recreating available slot — another booking exists in same slot."
+      );
+    }
   }
 
   res.status(200).json({ success: true });
+  return;
 });
