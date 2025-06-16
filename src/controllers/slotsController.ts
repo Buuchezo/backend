@@ -5,6 +5,7 @@ import { AppError } from "../utils/appErrorr";
 import { UserModel } from "../models/userModel";
 import { addEventHelper, hasClientDoubleBooked } from "../utils/addEventHelper";
 import { convertToSlotModelInput } from "../utils/convertToSlotMode";
+import mongoose from "mongoose";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {
@@ -89,7 +90,10 @@ export const createAppointment = catchAsync(
     }
 
     const workers = await UserModel.find({ role: "worker" });
-    const events = await SlotModel.find({}); // Consider filtering for relevant date range for performance
+    const events = (await SlotModel.find({}).lean()).map((event) => ({
+      ...event,
+      clientId: event.clientId?.toString(),
+    }));// Consider filtering for relevant date range for performance
 
     // 🛑 PRE-CHECK: Block duplicate booking by same user/client in overlapping timeslot
     const clientId = eventData.clientId?.toString() ?? user._id.toString();
@@ -101,7 +105,7 @@ export const createAppointment = catchAsync(
       clientId,
       clientName: eventData.clientName,
     });
-    console.log("It´s already booke by the " + user + " " + isAlreadyBooked);
+    console.log("It´s already booked by the " + user + " " + isAlreadyBooked);
     if (isAlreadyBooked) {
       res
         .status(409)

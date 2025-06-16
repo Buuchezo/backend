@@ -345,13 +345,6 @@ export function addEventHelper({
   const parsedStart = parse(formattedStart, "yyyy-MM-dd HH:mm", new Date());
   const parsedEnd = parse(formattedEnd, "yyyy-MM-dd HH:mm", new Date());
 
-  console.log("🆕 New booking request:", {
-    formattedStart,
-    formattedEnd,
-    parsedStart,
-    parsedEnd,
-  });
-
   const normalizedEvents = events.map((e) => ({
     ...e,
     start:
@@ -469,7 +462,7 @@ export function addEventHelper({
       eventData.clientName ??
       `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""}`.trim(),
   };
-  console.log(newEvent);
+
 
   console.log("✅ Creating new event with clientId:", clientId?.toString());
   updatedEvents.push(newEvent);
