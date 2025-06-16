@@ -5,7 +5,7 @@ import {
   createSlots,
   getSlot,
   getSlots,
-  updateSlot,
+  updateAppointment,
   createAppointment,
   deleteAppointment,
 } from "../controllers/slotsController";
@@ -14,9 +14,10 @@ const router = express.Router();
 
 router.post("/:id", createAppointment);
 router.delete("/:id", deleteAppointment);
+router.patch("/:id", updateAppointment);
 router.post("/", generateSlotsMiddleware, createSlots);
 router.get("/", getSlots);
 router.get("/:id", getSlot);
-router.patch("/:id", addEventMiddleware, updateSlot);
+
 
 export default router;
