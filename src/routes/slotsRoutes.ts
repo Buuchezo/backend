@@ -8,8 +8,8 @@ import {
   updateAppointment,
   createAppointment,
   deleteAppointment,
+  markWorkerSick,
 } from "../controllers/slotsController";
-import { addEventMiddleware } from "../utils/bookAppointment";
 const router = express.Router();
 
 router.post("/:id", createAppointment);
@@ -18,6 +18,8 @@ router.patch("/:id", updateAppointment);
 router.post("/", generateSlotsMiddleware, createSlots);
 router.get("/", getSlots);
 router.get("/:id", getSlot);
+
+router.post('/reassign', markWorkerSick)
 
 
 export default router;

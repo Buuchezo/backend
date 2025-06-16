@@ -72,7 +72,7 @@ export function updateEventHelperBackend({
   const newEnd = parseISO(formattedEnd);
   const newClientId = original.clientId?.toString();
 
-  // 🛑 Check for booking conflicts (same client, overlapping, not same appointment)
+  // Check for booking conflicts (same client, overlapping, not same appointment)
   const hasConflict = events.some((e) => {
     const isBooked =
       e.calendarId === "booked" &&
@@ -89,7 +89,7 @@ export function updateEventHelperBackend({
   const originalStart = parseISO(original.start);
   const originalEnd = parseISO(original.end);
 
-  // 🧹 Clean overlapping slots
+  // Clean overlapping slots
   const cleanedEvents = events.filter((e) => {
     if (e.title !== "Available Slot") return true;
     const eStart = parseISO(e.start);
@@ -97,19 +97,19 @@ export function updateEventHelperBackend({
     return eEnd <= newStart || eStart >= newEnd;
   });
 
-  // 🗑 Remove original from list
+  //  Remove original from list
   const withoutOriginal = cleanedEvents.filter(
     (e) => e._id?.toString() !== original._id!.toString()
   );
 
-  // 🔄 Generate new slots for before/after
+  //  Generate new slots for before/after
   const beforeSlots = generateAvailableSlotsBetweenBackend(
     originalStart,
     newStart
   );
   const afterSlots = generateAvailableSlotsBetweenBackend(newEnd, originalEnd);
 
-  // 👤 Get assigned worker for title
+  //  Get assigned worker for title
   const assignedWorker = workers.find(
     (w) => w._id?.toString() === original.ownerId?.toString()
   );

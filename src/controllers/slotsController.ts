@@ -8,6 +8,7 @@ import { convertToSlotModelInput } from "../utils/convertToSlotMode";
 import mongoose from "mongoose";
 import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
 import { parseISO } from "date-fns";
+import { reassignAppointmentsHelper } from "../utils/reassignWorker";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {
@@ -113,64 +114,6 @@ export const getSlot = catchAsync(
   }
 );
 
-// export const updateSlot = catchAsync(
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     const slotId = req.params.id;
-
-//     // If middleware ran, use its values
-//     const updatedSlotFromMiddleware = res.locals.updatedSlot;
-//     const bookedSlotFromMiddleware = res.locals.bookedSlot;
-
-//     // If middleware didn't run, fallback to client payload
-//     const appointment = bookedSlotFromMiddleware || req.body.eventData;
-//     if (!appointment) {
-//       return next(
-//         new AppError("Missing appointment data in request body", 400)
-//       );
-//     }
-
-//     // Ensure no _id is used in creation
-//     if ("_id" in appointment) {
-//       delete appointment._id;
-//     }
-
-//     // 1. Update the original available slot (if not already done by middleware)
-//     let updatedSlot = updatedSlotFromMiddleware;
-//     if (!updatedSlotFromMiddleware) {
-//       const slot = await SlotModel.findById(slotId);
-//       if (!slot) {
-//         return next(new AppError("No slot found with that id", 404));
-//       }
-
-//       if ((slot.remainingCapacity ?? 1) <= 1) {
-//         await SlotModel.findByIdAndDelete(slotId);
-//       } else {
-//         updatedSlot = await SlotModel.findByIdAndUpdate(
-//           slotId,
-//           { $inc: { remainingCapacity: -1 } },
-//           { new: true }
-//         );
-//       }
-//     }
-
-//     // 2. Create the booked appointment (if not already done by middleware)
-//     const newAppointment =
-//       bookedSlotFromMiddleware ||
-//       (await SlotModel.create({
-//         ...appointment,
-//         calendarId: "booked",
-//       }));
-
-//     res.status(200).json({
-//       status: "success",
-//       data: {
-//         appointment: newAppointment,
-//         updatedSlot,
-//       },
-//     });
-//   }
-// );
-
 export const updateAppointment = catchAsync(async (req, res) => {
   const { eventData } = req.body;
 
@@ -246,49 +189,6 @@ export const getSlots = catchAsync(
   }
 );
 
-// export const deleteAppointment = catchAsync(async (req, res) => {
-//   const eventId = req.params.id;
-//   console.log("🗑️ Deleting appointment with ID:", eventId);
-
-//   const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
-//   if (!deletedEvent) {
-//     res.status(404).json({ error: "Appointment not found" });
-//     return;
-//   }
-
-//   const { start, end } = deletedEvent;
-
-//   // Get current number of workers (used as max capacity for slots)
-//   const workers = await UserModel.find({ role: "worker" });
-//   const workerCount = workers.length;
-
-//   // Find matching available slot
-//   const existingAvailable = await SlotModel.findOne({
-//     start,
-//     end,
-//     calendarId: "available",
-//   });
-
-//   if (existingAvailable) {
-//     const current = existingAvailable.remainingCapacity ?? 0;
-
-//     // Ensure we don't exceed the original max capacity
-//     existingAvailable.remainingCapacity = Math.min(current + 1, workerCount);
-//     await existingAvailable.save();
-//   } else {
-//     // If no existing slot, recreate a new available slot with 1 capacity
-//     await SlotModel.create({
-//       title: "Available Slot",
-//       start,
-//       end,
-//       calendarId: "available",
-//       remainingCapacity: 1,
-//     });
-//   }
-
-//   res.status(200).json({ success: true });
-// });
-
 export const deleteAppointment = catchAsync(async (req, res) => {
   const eventId = req.params.id;
   console.log("🗑️ Deleting appointment with ID:", eventId);
@@ -348,4 +248,10 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
   res.status(200).json({ success: true });
   return;
+});
+
+export const markWorkerSick = catchAsync(async (req, res) => {
+  const { workerId } = req.body;
+  await reassignAppointmentsHelper(workerId);
+  res.status(200).json({ success: true });
 });

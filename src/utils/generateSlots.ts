@@ -39,7 +39,6 @@ export async function generateSlotsMiddleware(
   // ✅ Fetch all workers
   const workers = await UserModel.find({ role: "worker" });
   const workerCount = workers.length;
-  console.log(workerCount);
   const daysInMonth = eachDayOfInterval({
     start: startOfMonth(new Date(year, month)),
     end: endOfMonth(new Date(year, month)),

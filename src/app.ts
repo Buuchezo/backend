@@ -136,10 +136,6 @@ export interface User {
   role: "user" | "worker" | "admin";
 }
 
-// export interface Worker {
-//   id: string;
-//   name: string;
-// }
 
 const app = express();
 app.set("trust proxy", 1);
