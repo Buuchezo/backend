@@ -241,7 +241,7 @@ export const getSlots = catchAsync(
 
 export const deleteAppointment = catchAsync(async (req, res) => {
   const eventId = req.params.id;
-
+  console.log(eventId);
   const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
   if (!deletedEvent) {
     res.status(404).json({ error: "Appointment not found" });
