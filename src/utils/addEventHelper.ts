@@ -301,13 +301,22 @@ export function hasClientDoubleBooked({
     const eventStart = toDate(e.start);
     const eventEnd = toDate(e.end);
 
+    const normalizedEventClientId =
+      typeof e.clientId === "string" ? e.clientId : e.clientId?.toString(); // handle ObjectId
+
     const isSameClient =
-      e.clientId?.toString() === clientId ||
+      normalizedEventClientId === clientId ||
       (clientName && e.clientName === clientName);
 
-    console.log(isSameClient);
-
     const timeOverlap = parsedStart < eventEnd && parsedEnd > eventStart;
+
+    console.log("📌 Double booking check:", {
+      normalizedEventClientId,
+      isSameClient,
+      eventClientName: e.clientName,
+      givenClientName: clientName,
+      timeOverlap,
+    });
 
     return isSameClient && timeOverlap;
   });
