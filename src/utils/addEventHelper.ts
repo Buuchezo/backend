@@ -278,6 +278,40 @@ import { parse } from "date-fns";
 //     newEvent,
 //   }
 // }
+export function hasClientDoubleBooked({
+  events,
+  start,
+  end,
+  clientId,
+  clientName,
+}: {
+  events: CalendarEventInput[];
+  start: string | Date;
+  end: string | Date;
+  clientId: string;
+  clientName?: string;
+}): boolean {
+  const toDate = (value: string | Date): Date =>
+    typeof value === "string" ? new Date(value) : value;
+
+  const parsedStart = toDate(start);
+  const parsedEnd = toDate(end);
+
+  return events.some((e) => {
+    const eventStart = toDate(e.start);
+    const eventEnd = toDate(e.end);
+
+    const isSameClient =
+      e.clientId?.toString() === clientId ||
+      (clientName && e.clientName === clientName);
+
+    console.log(isSameClient);
+
+    const timeOverlap = parsedStart < eventEnd && parsedEnd > eventStart;
+
+    return isSameClient && timeOverlap;
+  });
+}
 
 export function addEventHelper({
   eventData,
@@ -426,7 +460,7 @@ export function addEventHelper({
       eventData.clientName ??
       `${user?.firstName ?? "Guest"} ${user?.lastName ?? ""}`.trim(),
   };
-  console.log(newEvent)
+  console.log(newEvent);
 
   console.log("✅ Creating new event with clientId:", clientId?.toString());
   updatedEvents.push(newEvent);
