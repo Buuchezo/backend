@@ -185,28 +185,41 @@ export const updateAppointment = catchAsync(async (req, res) => {
         workers,
       });
 
-    // Delete overlapping slots (excluding the updated appointment)
+    // 🧹 Delete overlapping available slots ONLY
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // Update the appointment in DB
+    // 🔁 Update the modified appointment
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
-      updatedAppointment
+      updatedAppointment,
+      { new: true }
     );
 
-    // Insert only new available slots
+    // ➕ Insert new available slots (from gaps)
     if (slotsToInsert?.length) {
-      await SlotModel.insertMany(slotsToInsert);
+      for (const slot of slotsToInsert) {
+        // Ensure slot doesn't already exist
+        const exists = await SlotModel.findOne({
+          start: slot.start,
+          end: slot.end,
+          calendarId: "available",
+        });
+
+        if (!exists) {
+          await SlotModel.create(slot);
+        }
+      }
     }
 
     res.status(200).json({
       success: true,
       updatedEvent: updatedAppointment,
     });
+    return;
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update appointment.";
@@ -293,41 +306,45 @@ export const deleteAppointment = catchAsync(async (req, res) => {
   const workers = await UserModel.find({ role: "worker" });
   const workerCount = workers.length;
 
-  // 3. Check if an available slot for this time already exists
-  const existingAvailable = await SlotModel.findOne({
+  // 3. Check for existing exact-match available slot
+  const existingExact = await SlotModel.findOne({
     start,
     end,
     calendarId: "available",
   });
 
-  if (existingAvailable) {
-    // ✅ Slot exists — just increment its capacity (capped at worker count)
-    const current = existingAvailable.remainingCapacity ?? 0;
-    existingAvailable.remainingCapacity = Math.min(current + 1, workerCount);
-    await existingAvailable.save();
-  } else {
-    // 4. Only create a new available slot if no other appointment exists for this time
-    const overlappingBooked = await SlotModel.findOne({
-      start,
-      end,
-      calendarId: "booked",
-    });
-
-    if (!overlappingBooked) {
-      // ✅ Safe to recreate an available slot
-      await SlotModel.create({
-        title: "Available Slot",
-        start,
-        end,
-        calendarId: "available",
-        remainingCapacity: 1,
-      });
-    } else {
-      console.log(
-        "🔁 Not recreating available slot — another booking exists in same slot."
-      );
-    }
+  if (existingExact) {
+    // ✅ Exact slot already exists — just increase capacity
+    const current = existingExact.remainingCapacity ?? 0;
+    existingExact.remainingCapacity = Math.min(current + 1, workerCount);
+    await existingExact.save();
+    res.status(200).json({ success: true });
+    return;
   }
+
+  // 4. Check for overlapping available slot (e.g., due to prior reschedule logic)
+  const overlappingAvailable = await SlotModel.findOne({
+    calendarId: "available",
+    start: { $lt: end },
+    end: { $gt: start },
+  });
+
+  if (overlappingAvailable) {
+    console.log(
+      "🛑 Skipping slot creation: overlapping available slot already exists."
+    );
+    res.status(200).json({ success: true });
+    return;
+  }
+
+  // 5. No exact or overlapping slot — create new available slot
+  await SlotModel.create({
+    title: "Available Slot",
+    start,
+    end,
+    calendarId: "available",
+    remainingCapacity: 1,
+  });
 
   res.status(200).json({ success: true });
   return;
