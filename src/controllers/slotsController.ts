@@ -252,6 +252,20 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
 export const markWorkerSick = catchAsync(async (req, res) => {
   const { workerId } = req.body;
-  await reassignAppointmentsHelper(workerId);
-  res.status(200).json({ success: true });
+
+  if (!workerId) {
+    res.status(400).json({ error: "Missing workerId" });
+    return;
+  }
+
+  try {
+    await reassignAppointmentsHelper(workerId);
+    res
+      .status(200)
+      .json({ success: true, message: "Appointments reassigned." });
+  } catch (error) {
+    console.error("❌ Error in reassignAppointmentsHelper:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ success: false, error: message });
+  }
 });
