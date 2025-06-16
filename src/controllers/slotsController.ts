@@ -252,7 +252,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
 export const markWorkerSick = catchAsync(async (req, res) => {
   const { workerId } = req.body;
-
+  console.log(workerId);
   if (!workerId) {
     res.status(400).json({ error: "Missing workerId" });
     return;
