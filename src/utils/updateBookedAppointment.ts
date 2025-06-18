@@ -17,14 +17,15 @@ export function generateAvailableSlotsBetweenBackend(
 ): CalendarEventInput[] {
   const slots: CalendarEventInput[] = [];
   let current = new Date(start);
+  const id = new mongoose.Types.ObjectId();
 
   while (addMinutes(current, 60) <= end) {
     const slotEnd = addMinutes(current, 60);
 
     if (slotEnd <= end) {
       slots.push({
-        _id: new mongoose.Types.ObjectId(),
-        id: new mongoose.Types.ObjectId().toString(),
+        _id: id,
+        id: id.toString(),
         title: "Available Slot",
         description: "",
         start: normalizeToScheduleXFormat(current.toISOString()),
@@ -139,7 +140,7 @@ export function updateEventHelperBackend({
   ];
 
   return {
-    updatedEvents: [...beforeSlots, ...afterSlots],
+    updatedEvents,
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
   };

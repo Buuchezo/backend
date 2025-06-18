@@ -33,6 +33,29 @@ export const getInternalEvent = catchAsync(
 
 export const updateInternalEvent = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
+    const { start, end, sharedWith = [] } = req.body;
+
+    // Validate required fields
+    if (!start || !end || !Array.isArray(sharedWith)) {
+      return next(new AppError("Missing required fields", 400));
+    }
+
+    // Step 1: Check availability for all workers
+    const overlappingEvents = await InternalEventModel.find({
+      _id: { $ne: req.params.id }, // exclude the event being updated
+      sharedWith: { $in: sharedWith },
+      $or: [
+        { start: { $lt: end }, end: { $gt: start } }, // basic time overlap check
+      ],
+    });
+
+    if (overlappingEvents.length > 0) {
+      return next(
+        new AppError("One or more workers are not available at this time", 400)
+      );
+    }
+
+    // Step 2: Proceed with update
     const internalEvent = await InternalEventModel.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -41,9 +64,11 @@ export const updateInternalEvent = catchAsync(
         runValidators: true,
       }
     );
+
     if (!internalEvent) {
       return next(new AppError("No internal event found with that id", 404));
     }
+
     res.status(200).json({
       status: "success",
       data: { internalEvent },
