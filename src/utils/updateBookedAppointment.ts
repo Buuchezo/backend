@@ -333,8 +333,6 @@ export function updateEventHelperBackend({
   const newEnd = parseISO(formattedEnd);
   const newClientId = original.clientId?.toString();
 
-  console.log("🔍 Checking for conflicts with:");
-  console.log("🆕 New range:", newStart, newEnd);
 
   const hasConflict = events.some((e) => {
     const isBooked =
@@ -375,10 +373,7 @@ export function updateEventHelperBackend({
 
     if (overlapsOriginal && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
-      console.log(
-        "🔄 Restoring capacity in original slot:",
-        slot._id?.toString()
-      );
+    
     }
   }
 
@@ -398,18 +393,11 @@ export function updateEventHelperBackend({
       slotEndTime > newStartTime &&
       !(slotStartTime < originalEndTime && slotEndTime > originalStartTime);
 
-    console.log("🕐 Checking slot", {
-      slotId: slot._id?.toString(),
-      slotStart: slot.start,
-      slotEnd: slot.end,
-      slotStartTime,
-      slotEndTime,
-      overlapsNew,
-    });
+   
 
     if (overlapsNew && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
-      console.log("➖ Reducing capacity in new slot:", slot._id?.toString());
+  
     }
   }
 
@@ -430,8 +418,7 @@ export function updateEventHelperBackend({
   );
   const afterSlots = generateAvailableSlotsBetweenBackend(newEnd, originalEnd);
 
-  console.log("➕ Generated before slots:", beforeSlots.length);
-  console.log("➕ Generated after slots:", afterSlots.length);
+
 
   const assignedWorker = workers.find(
     (w) => w._id?.toString() === original.ownerId?.toString()
