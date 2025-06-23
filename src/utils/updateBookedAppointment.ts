@@ -333,7 +333,6 @@ export function updateEventHelperBackend({
   const newEnd = parseISO(formattedEnd);
   const newClientId = original.clientId?.toString();
 
-
   const hasConflict = events.some((e) => {
     const isBooked =
       e.calendarId === "booked" &&
@@ -373,7 +372,6 @@ export function updateEventHelperBackend({
 
     if (overlapsOriginal && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
-    
     }
   }
 
@@ -393,11 +391,8 @@ export function updateEventHelperBackend({
       slotEndTime > newStartTime &&
       !(slotStartTime < originalEndTime && slotEndTime > originalStartTime);
 
-   
-
     if (overlapsNew && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
-  
     }
   }
 
@@ -417,8 +412,6 @@ export function updateEventHelperBackend({
     newStart
   );
   const afterSlots = generateAvailableSlotsBetweenBackend(newEnd, originalEnd);
-
-
 
   const assignedWorker = workers.find(
     (w) => w._id?.toString() === original.ownerId?.toString()
@@ -446,7 +439,7 @@ export function updateEventHelperBackend({
       const eStart = parseISO(e.start);
       const eEnd = parseISO(e.end);
       return (
-        (e.calendarId === "booked" || e.title === "Available Slot") &&
+        (e.calendarId === "booked" || e.title?.startsWith("Available Slot")) &&
         eEnd > newStart &&
         eStart < newEnd
       );
@@ -455,6 +448,8 @@ export function updateEventHelperBackend({
     .filter((id): id is string => !!id);
 
   console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
+
+
 
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
