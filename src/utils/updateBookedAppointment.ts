@@ -439,6 +439,14 @@ export function updateEventHelperBackend({
     .filter((id): id is string => !!id);
 
   console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
+  console.log("🧪 Final Available Slots and Capacities:");
+  for (const slot of events) {
+    if (slot.title === "Available Slot") {
+      console.log(
+        `📍 ID: ${slot._id}, Start: ${slot.start}, Capacity: ${slot.remainingCapacity}`
+      );
+    }
+  }
 
   return {
     updatedEvents: [...beforeSlots, ...afterSlots], // These contain updated capacities
