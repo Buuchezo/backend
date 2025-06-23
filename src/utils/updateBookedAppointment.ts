@@ -382,6 +382,15 @@ export function updateEventHelperBackend({
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
       console.log("➖ Reducing capacity in new slot:", slot._id?.toString());
     }
+
+    console.log("🕐 Checking slot", {
+      slotId: slot._id?.toString(),
+      slotStart: slot.start,
+      slotEnd: slot.end,
+      overlapsNew,
+      originalStart: original.start,
+      originalEnd: original.end,
+    });
   }
 
   const cleanedEvents = events.filter((e) => {
