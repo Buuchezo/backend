@@ -157,6 +157,7 @@ export function updateEventHelperBackend({
   updatedEvents: CalendarEventInput[];
   updatedAppointment: CalendarEventInput;
   slotsToInsert: CalendarEventInput[];
+  overlappingBookedIds: string[];
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
@@ -275,9 +276,20 @@ export function updateEventHelperBackend({
     ...afterSlots,
   ];
 
+  // ✅ Collect all booked appointment IDs for the same timeslot
+  const overlappingBookedIds = events
+    .filter((e) => {
+      const isBooked = e.calendarId === "booked";
+      const overlaps = parseISO(e.start) < newEnd && parseISO(e.end) > newStart;
+      return isBooked && overlaps;
+    })
+    .map((e) => e._id?.toString())
+    .filter((id): id is string => typeof id === "string");
+
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
+    overlappingBookedIds,
   };
 }
