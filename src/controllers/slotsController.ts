@@ -80,6 +80,33 @@ export const createAppointment = catchAsync(
     const dbReadyEvent = convertToSlotModelInput(result.newEvent);
     const savedEvent = await SlotModel.create(dbReadyEvent);
 
+    // Update the related available slot's capacity (if still present)
+    const updatedSlot = result.updatedEvents.find(
+      (e) =>
+        e.title === "Available Slot" &&
+        e.start === result.newEvent.start &&
+        e.end === result.newEvent.end
+    );
+
+    if (
+      updatedSlot &&
+      updatedSlot._id &&
+      typeof updatedSlot.remainingCapacity === "number"
+    ) {
+      if (updatedSlot.remainingCapacity <= 0) {
+        await SlotModel.findByIdAndDelete(updatedSlot._id);
+      } else {
+        await SlotModel.findByIdAndUpdate(
+          updatedSlot._id,
+          {
+            remainingCapacity: updatedSlot.remainingCapacity,
+            title: `Available Slot (${updatedSlot.remainingCapacity} left)`,
+          },
+          { new: true }
+        );
+      }
+    }
+
     res.status(201).json({
       success: true,
       event: {
