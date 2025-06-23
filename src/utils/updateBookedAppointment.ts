@@ -316,6 +316,7 @@ export function updateEventHelperBackend({
   updatedAppointment: CalendarEventInput;
   slotsToInsert: CalendarEventInput[];
   overlappingBookedIds: string[];
+  slotsToUpdate: CalendarEventInput[];
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
@@ -468,19 +469,13 @@ export function updateEventHelperBackend({
 
   console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
 
-  console.log("🧪 Final Available Slots and Capacities:");
-  for (const slot of events) {
-    if (slot.title === "Available Slot") {
-      console.log(
-        `📍 ID: ${slot._id}, Start: ${slot.start}, Capacity: ${slot.remainingCapacity}`
-      );
-    }
-  }
-
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
     overlappingBookedIds,
+    slotsToUpdate: allAvailableSlots.filter(
+      (s) => typeof s.remainingCapacity === "number"
+    ),
   };
 }

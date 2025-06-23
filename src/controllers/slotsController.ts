@@ -266,12 +266,34 @@ export const updateAppointment = catchAsync(async (req, res) => {
   const events = await SlotModel.find({});
 
   try {
-    const { updatedEvents, updatedAppointment, slotsToInsert } =
+    const { updatedEvents, updatedAppointment, slotsToInsert, slotsToUpdate } =
       updateEventHelperBackend({
         eventData,
         events,
         workers,
       });
+
+    // ⬇️ Update slot capacities
+    if (slotsToUpdate?.length) {
+      for (const slot of slotsToUpdate) {
+        if (!slot._id) continue;
+
+        if (typeof slot.remainingCapacity !== "number") continue; // ✅ Safeguard
+
+        if (slot.remainingCapacity <= 0) {
+          await SlotModel.findByIdAndDelete(slot._id);
+        } else {
+          await SlotModel.findByIdAndUpdate(
+            slot._id,
+            {
+              remainingCapacity: slot.remainingCapacity,
+              title: `Available Slot (${slot.remainingCapacity} left)`,
+            },
+            { new: true }
+          );
+        }
+      }
+    }
 
     // 🧼 Ensure appointment exists
     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
