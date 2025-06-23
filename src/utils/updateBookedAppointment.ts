@@ -279,12 +279,16 @@ export function updateEventHelperBackend({
   // ✅ Collect all booked appointment IDs for the same timeslot
   const overlappingBookedIds = events
     .filter((e) => {
-      const isBooked = e.calendarId === "booked";
-      const overlaps = parseISO(e.start) < newEnd && parseISO(e.end) > newStart;
-      return isBooked && overlaps;
+      const eStart = parseISO(e.start);
+      const eEnd = parseISO(e.end);
+      return (
+        (e.calendarId === "booked" || e.title === "Available Slot") &&
+        eEnd > newStart &&
+        eStart < newEnd
+      );
     })
     .map((e) => e._id?.toString())
-    .filter((id): id is string => typeof id === "string");
+    .filter((id): id is string => !!id);
   console.log(overlappingBookedIds);
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
