@@ -167,6 +167,71 @@ export const getSlot = catchAsync(
 //   }
 // });
 
+///////
+// export const updateAppointment = catchAsync(async (req, res) => {
+//   const { eventData } = req.body;
+
+//   const workers = await UserModel.find({ role: "worker" });
+//   const events = await SlotModel.find({});
+
+//   try {
+//     const { updatedEvents, updatedAppointment, slotsToInsert } =
+//       updateEventHelperBackend({
+//         eventData,
+//         events,
+//         workers,
+//       });
+
+//     // 🧼 Ensure appointment exists
+//     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
+//     if (!appointmentExists) {
+//       res.status(404).json({ error: "Appointment not found." });
+//       return;
+//     }
+
+//     // 🧹 Delete overlapping slots
+//     await SlotModel.deleteMany({
+//       start: { $lt: parseISO(eventData.end) },
+//       end: { $gt: parseISO(eventData.start) },
+//       calendarId: "available",
+//     });
+
+//     // 🛠 Update appointment
+//     await SlotModel.findByIdAndUpdate(
+//       updatedAppointment._id,
+//       updatedAppointment,
+//       { new: true }
+//     );
+
+//     // ➕ Insert new slots if needed
+//     if (slotsToInsert?.length) {
+//       const insertPromises = slotsToInsert.map(async (slot) => {
+//         const exists = await SlotModel.findOne({
+//           start: slot.start,
+//           end: slot.end,
+//           calendarId: "available",
+//         });
+
+//         if (!exists) {
+//           return SlotModel.create(slot);
+//         }
+//       });
+
+//       await Promise.all(insertPromises);
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       updatedEvent: updatedAppointment,
+//     });
+//   } catch (error) {
+//     const message =
+//       error instanceof Error ? error.message : "Failed to update appointment.";
+//     res.status(409).json({ error: message });
+//   }
+
+//////
+
 export const updateAppointment = catchAsync(async (req, res) => {
   const { eventData } = req.body;
 
@@ -188,21 +253,21 @@ export const updateAppointment = catchAsync(async (req, res) => {
       return;
     }
 
-    // 🧹 Delete overlapping slots
+    // 🧹 Delete overlapping available slots within the new range
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // 🛠 Update appointment
+    // 🛠 Update the appointment details
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // ➕ Insert new slots if needed
+    // ➕ Insert new available slots if needed
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -219,6 +284,20 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(insertPromises);
     }
 
+    // 💾 Update remainingCapacity on existing overlapping available slots
+    if (updatedEvents?.length) {
+      const updatePromises = updatedEvents
+        .filter((e) => e.title === "Available Slot" && e._id)
+        .map((slot) =>
+          SlotModel.findByIdAndUpdate(slot._id, {
+            remainingCapacity: slot.remainingCapacity,
+          })
+        );
+
+      await Promise.all(updatePromises);
+    }
+
+    // ✅ Success response
     res.status(200).json({
       success: true,
       updatedEvent: updatedAppointment,
