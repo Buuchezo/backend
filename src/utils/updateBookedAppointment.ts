@@ -269,12 +269,12 @@ export function updateEventHelperBackend({
     clientName: eventData.clientName ?? original.clientName ?? "Guest",
   };
 
-  const updatedEvents = [
-    ...withoutOriginal,
-    ...beforeSlots,
-    updatedAppointment,
-    ...afterSlots,
-  ];
+  // const updatedEvents = [
+  //   ...withoutOriginal,
+  //   ...beforeSlots,
+  //   updatedAppointment,
+  //   ...afterSlots,
+  // ];
 
   // ✅ Collect all booked appointment IDs for the same timeslot
   const overlappingBookedIds = events
@@ -285,7 +285,7 @@ export function updateEventHelperBackend({
     })
     .map((e) => e._id?.toString())
     .filter((id): id is string => typeof id === "string");
-
+  console.log(overlappingBookedIds);
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
