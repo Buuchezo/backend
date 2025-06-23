@@ -351,14 +351,26 @@ export function updateEventHelperBackend({
 
   const allAvailableSlots = events.filter((e) => e.title === "Available Slot");
 
+  // Helper to compare time only (in minutes)
+  function stripToTimeOnly(date: Date): number {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+
   for (const slot of allAvailableSlots) {
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
+    const slotStartTime = stripToTimeOnly(slotStart);
+    const slotEndTime = stripToTimeOnly(slotEnd);
+    const originalStartTime = stripToTimeOnly(originalStart);
+    const originalEndTime = stripToTimeOnly(originalEnd);
+    const newStartTime = stripToTimeOnly(newStart);
+    const newEndTime = stripToTimeOnly(newEnd);
+
     const overlapsOriginal =
-      slotStart < originalEnd &&
-      slotEnd > originalStart &&
-      !(slotStart < newEnd && slotEnd > newStart);
+      slotStartTime < originalEndTime &&
+      slotEndTime > originalStartTime &&
+      !(slotStartTime < newEndTime && slotEndTime > newStartTime);
 
     if (overlapsOriginal && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
@@ -373,10 +385,26 @@ export function updateEventHelperBackend({
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
+    const slotStartTime = stripToTimeOnly(slotStart);
+    const slotEndTime = stripToTimeOnly(slotEnd);
+    const originalStartTime = stripToTimeOnly(originalStart);
+    const originalEndTime = stripToTimeOnly(originalEnd);
+    const newStartTime = stripToTimeOnly(newStart);
+    const newEndTime = stripToTimeOnly(newEnd);
+
     const overlapsNew =
-      slotStart < newEnd &&
-      slotEnd > newStart &&
-      !(slotStart < originalEnd && slotEnd > originalStart);
+      slotStartTime < newEndTime &&
+      slotEndTime > newStartTime &&
+      !(slotStartTime < originalEndTime && slotEndTime > originalStartTime);
+
+    console.log("🕐 Checking slot", {
+      slotId: slot._id?.toString(),
+      slotStart: slot.start,
+      slotEnd: slot.end,
+      slotStartTime,
+      slotEndTime,
+      overlapsNew,
+    });
 
     if (overlapsNew && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
@@ -400,6 +428,7 @@ export function updateEventHelperBackend({
     newStart
   );
   const afterSlots = generateAvailableSlotsBetweenBackend(newEnd, originalEnd);
+
   console.log("➕ Generated before slots:", beforeSlots.length);
   console.log("➕ Generated after slots:", afterSlots.length);
 
@@ -424,7 +453,6 @@ export function updateEventHelperBackend({
     clientName: eventData.clientName ?? original.clientName ?? "Guest",
   };
 
-  // ✅ Include all overlapping slot or booking IDs
   const overlappingBookedIds = events
     .filter((e) => {
       const eStart = parseISO(e.start);
@@ -439,6 +467,7 @@ export function updateEventHelperBackend({
     .filter((id): id is string => !!id);
 
   console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
+
   console.log("🧪 Final Available Slots and Capacities:");
   for (const slot of events) {
     if (slot.title === "Available Slot") {
@@ -449,7 +478,7 @@ export function updateEventHelperBackend({
   }
 
   return {
-    updatedEvents: [...beforeSlots, ...afterSlots], // These contain updated capacities
+    updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
     overlappingBookedIds,
