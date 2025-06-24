@@ -271,28 +271,15 @@ export const updateAppointment = catchAsync(async (req, res) => {
       updatedAppointment,
       slotsToInsert,
       slotsToUpdate,
-      groupedOverlappingIds, // <- New
+      groupedOverlappingIds, // ⬅️ new
+      overlappingBookedIds, // ⬅️ optional, also available
     } = updateEventHelperBackend({
       eventData,
       events,
       workers,
     });
 
-    // 🧩 Flatten and dedupe grouped overlapping slot IDs
-    const flattenedUniqueIds = Array.from(
-      new Set(groupedOverlappingIds.flat().filter(Boolean))
-    );
-
-    console.log("🧩 Flattened overlapping slot IDs:", flattenedUniqueIds);
-
-    // 🔥 Delete slots that were reduced to 0 capacity
-    if (flattenedUniqueIds.length) {
-      await SlotModel.deleteMany({ _id: { $in: flattenedUniqueIds } });
-      console.log(
-        "🗑️ Deleted overlapping available slots:",
-        flattenedUniqueIds
-      );
-    }
+    console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
 
     // ⬇️ Update slot capacities
     if (slotsToUpdate?.length) {
@@ -321,21 +308,21 @@ export const updateAppointment = catchAsync(async (req, res) => {
       return;
     }
 
-    // 🧹 Delete overlapping available slots within the new range
+    // 🧹 Delete overlapping available slots in new range
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // 🛠 Update the appointment details
+    // 🛠 Update the main appointment
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // ➕ Insert new available slots if needed
+    // ➕ Insert new generated slots
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -344,15 +331,13 @@ export const updateAppointment = catchAsync(async (req, res) => {
           calendarId: "available",
         });
 
-        if (!exists) {
-          return SlotModel.create(slot);
-        }
+        if (!exists) return SlotModel.create(slot);
       });
 
       await Promise.all(insertPromises);
     }
 
-    // 💾 Update remainingCapacity on existing overlapping available slots
+    // 💾 Update capacities of inserted slots (if needed)
     if (updatedEvents?.length) {
       const updatePromises = updatedEvents
         .filter((e) => e.title === "Available Slot" && e._id)
@@ -365,10 +350,11 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(updatePromises);
     }
 
-    // ✅ Success response
+    // ✅ Final response
     res.status(200).json({
       success: true,
       updatedEvent: updatedAppointment,
+      groupedOverlappingIds, // ⬅️ optionally return to frontend
     });
   } catch (error) {
     const message =
