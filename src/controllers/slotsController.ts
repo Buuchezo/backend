@@ -271,16 +271,24 @@ export const updateAppointment = catchAsync(async (req, res) => {
       updatedAppointment,
       slotsToInsert,
       slotsToUpdate,
-      groupedOverlappingIds, // ⬅️ new
+      groupedOverlappingIds,
     } = updateEventHelperBackend({
       eventData,
       events,
       workers,
     });
+    if (!updatedAppointment._id) {
+      res.status(500).json({ error: "Updated appointment has no _id." });
+      return;
+    }
+    const updatedId = updatedAppointment._id.toString();
+    const currentGroup = groupedOverlappingIds.find((group) =>
+      group.includes(updatedId)
+    );
 
     console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
 
-    // ⬇️ Update slot capacities
+    // ⬇️ Step 1: Update slots with modified remainingCapacity
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
         if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
@@ -300,6 +308,49 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
+    // ⬇️ Step 2: Adjust slots not in current group
+    for (const group of groupedOverlappingIds) {
+      if (group === currentGroup) continue;
+
+      for (const id of group) {
+        const slot = await SlotModel.findById(id);
+        if (!slot || typeof slot.remainingCapacity !== "number") continue;
+
+        const isOutsideNewRange =
+          parseISO(slot.end) <= parseISO(eventData.start) ||
+          parseISO(slot.start) >= parseISO(eventData.end);
+
+        if (isOutsideNewRange) {
+          const newCap = Math.min(slot.remainingCapacity + 1, 3);
+          await SlotModel.findByIdAndUpdate(
+            id,
+            {
+              remainingCapacity: newCap,
+              title: `Available Slot (${newCap} left)`,
+            },
+            { new: true }
+          );
+          console.log("🔄 Restored capacity for slot:", id);
+        } else {
+          const newCap = Math.max(0, slot.remainingCapacity - 1);
+          if (newCap <= 0) {
+            await SlotModel.findByIdAndDelete(id);
+            console.log("🗑️ Deleted slot due to 0 capacity:", id);
+          } else {
+            await SlotModel.findByIdAndUpdate(
+              id,
+              {
+                remainingCapacity: newCap,
+                title: `Available Slot (${newCap} left)`,
+              },
+              { new: true }
+            );
+            console.log("➖ Reduced capacity for slot:", id);
+          }
+        }
+      }
+    }
+
     // 🧼 Ensure appointment exists
     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
     if (!appointmentExists) {
@@ -307,21 +358,21 @@ export const updateAppointment = catchAsync(async (req, res) => {
       return;
     }
 
-    // 🧹 Delete overlapping available slots in new range
+    // 🧹 Delete overlapping available slots in the new range
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // 🛠 Update the main appointment
+    // 🛠 Update the appointment details
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // ➕ Insert new generated slots
+    // ➕ Insert newly generated slots
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -336,7 +387,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(insertPromises);
     }
 
-    // 💾 Update capacities of inserted slots (if needed)
+    // 💾 Update titles/capacities of other valid slots (if any)
     if (updatedEvents?.length) {
       const updatePromises = updatedEvents
         .filter((e) => e.title === "Available Slot" && e._id)
@@ -349,11 +400,10 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(updatePromises);
     }
 
-    // ✅ Final response
     res.status(200).json({
       success: true,
       updatedEvent: updatedAppointment,
-      groupedOverlappingIds, // ⬅️ optionally return to frontend
+      groupedOverlappingIds, // Optional for frontend inspection
     });
   } catch (error) {
     const message =
