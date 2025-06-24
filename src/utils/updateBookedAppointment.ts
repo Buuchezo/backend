@@ -436,7 +436,7 @@ export function updateEventHelperBackend({
 
   // === 🧠 Group overlapping slot/booking IDs by start|end ===
   const overlappingBookedIds: string[] = [];
-  const groupedMap = new Map<string, string[]>(); // Key: start|end
+  const groupedMap = new Map<string, string[]>(); // Key: normalizedStart|normalizedEnd
 
   events.forEach((e) => {
     if (
@@ -444,10 +444,12 @@ export function updateEventHelperBackend({
       parseISO(e.end) > newStart &&
       parseISO(e.start) < newEnd
     ) {
-      const key = `${normalizeToScheduleXFormat(e.start)}|${normalizeToScheduleXFormat(e.end)}`;
+      const normalizedStart = normalizeToScheduleXFormat(e.start);
+      const normalizedEnd = normalizeToScheduleXFormat(e.end);
+      const key = `${normalizedStart}|${normalizedEnd}`;
       const id = e._id?.toString();
+
       if (id) {
-        overlappingBookedIds.push(id);
         if (!groupedMap.has(key)) {
           groupedMap.set(key, []);
         }
