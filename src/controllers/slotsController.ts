@@ -272,7 +272,6 @@ export const updateAppointment = catchAsync(async (req, res) => {
       slotsToInsert,
       slotsToUpdate,
       groupedOverlappingIds, // ⬅️ new
-      overlappingBookedIds, // ⬅️ optional, also available
     } = updateEventHelperBackend({
       eventData,
       events,
