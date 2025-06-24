@@ -272,71 +272,66 @@ export const updateAppointment = catchAsync(async (req, res) => {
       slotsToInsert,
       slotsToUpdate,
       groupedOverlappingIds,
+      originalAppointment, // <-- ensure this is returned by the helper
     } = updateEventHelperBackend({
       eventData,
       events,
       workers,
     });
 
-    console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
-
-    // ✅ Get current group where the updated appointment belongs
     const updatedId = updatedAppointment._id?.toString();
     if (!updatedId) {
       res.status(400).json({ error: "Missing appointment ID" });
       return;
     }
 
-    const currentGroup = groupedOverlappingIds.find((group) =>
-      group.includes(updatedId)
-    );
+    const originalStart = parseISO(originalAppointment.start);
+    const originalEnd = parseISO(originalAppointment.end);
+    const updatedStart = parseISO(updatedAppointment.start);
+    const updatedEnd = parseISO(updatedAppointment.end);
 
-    // ✅ Get other groups (not in same timeslot)
-    const otherGroups = groupedOverlappingIds.filter(
-      (group) => group !== currentGroup
-    );
+    // Loop through all slots and adjust based on change in range
+    for (const group of groupedOverlappingIds) {
+      for (const id of group) {
+        if (id === updatedId) continue;
+        const slot = await SlotModel.findById(id);
+        if (!slot || typeof slot.remainingCapacity !== "number") continue;
 
-    const idsToUpdate = otherGroups.flat();
+        const slotStart = parseISO(slot.start);
+        const slotEnd = parseISO(slot.end);
 
-    console.log("🎯 IDs to reduce capacity:", idsToUpdate);
+        const wasInOriginal =
+          slotStart < originalEnd && slotEnd > originalStart;
+        const isInUpdated = slotStart < updatedEnd && slotEnd > updatedStart;
 
-    // ⬇️ Update capacities of other slots
-    for (const id of idsToUpdate) {
-      const slot = await SlotModel.findById(id);
-      if (!slot || typeof slot.remainingCapacity !== "number") continue;
+        // ➕ Restore capacity if no longer used
+        if (wasInOriginal && !isInUpdated) {
+          const restoredCap = Math.min(slot.remainingCapacity + 1, 3);
+          await SlotModel.findByIdAndUpdate(id, {
+            remainingCapacity: restoredCap,
+            title: `Available Slot (${restoredCap} left)`,
+          });
+          console.log("🔁 Restored capacity for slot:", id);
+        }
 
-      const newCap = Math.max(0, slot.remainingCapacity - 1);
-      if (newCap <= 0) {
-        await SlotModel.findByIdAndDelete(id);
-        console.log("❌ Deleted slot:", id);
-      } else {
-        await SlotModel.findByIdAndUpdate(id, {
-          remainingCapacity: newCap,
-          title: `Available Slot (${newCap} left)`,
-        });
-        console.log("➖ Reduced capacity for slot:", id);
+        // ➖ Reduce capacity if now being used
+        if (!wasInOriginal && isInUpdated) {
+          const reducedCap = Math.max(slot.remainingCapacity - 1, 0);
+          if (reducedCap <= 0) {
+            await SlotModel.findByIdAndDelete(id);
+            console.log("❌ Deleted slot:", id);
+          } else {
+            await SlotModel.findByIdAndUpdate(id, {
+              remainingCapacity: reducedCap,
+              title: `Available Slot (${reducedCap} left)`,
+            });
+            console.log("➖ Reduced capacity for slot:", id);
+          }
+        }
       }
     }
 
-    // ⬇️ Restore capacity for previous group if time range shortened
-    const previousGroup = groupedOverlappingIds.find((group) =>
-      group.includes(updatedId)
-    );
-    const restoreIds = previousGroup?.filter((id) => id !== updatedId) || [];
-
-    for (const id of restoreIds) {
-      const slot = await SlotModel.findById(id);
-      if (!slot || typeof slot.remainingCapacity !== "number") continue;
-
-      const restoredCap = Math.min(slot.remainingCapacity + 1, 3);
-      await SlotModel.findByIdAndUpdate(id, {
-        remainingCapacity: restoredCap,
-        title: `Available Slot (${restoredCap} left)`,
-      });
-      console.log("🔁 Restored capacity for slot:", id);
-    }
-
-    // 🔄 Update slots in `slotsToUpdate` (already updated by helper)
+    // 🔄 Apply any direct changes collected by the helper
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
         if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
@@ -356,28 +351,28 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // 🧼 Ensure appointment exists
+    // 🧼 Ensure the updated appointment still exists
     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
     if (!appointmentExists) {
       res.status(404).json({ error: "Appointment not found." });
       return;
     }
 
-    // 🧹 Delete overlapping available slots in new range
+    // 🧹 Remove any available slots now overlapped by new appointment
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // 🛠 Update the main appointment
+    // 🛠 Final update of the main appointment
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // ➕ Insert new generated slots
+    // ➕ Insert any newly generated slots
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -385,14 +380,13 @@ export const updateAppointment = catchAsync(async (req, res) => {
           end: slot.end,
           calendarId: "available",
         });
-
         if (!exists) return SlotModel.create(slot);
       });
 
       await Promise.all(insertPromises);
     }
 
-    // 💾 Update other available slots with new capacity
+    // 💾 Sync other updated available slots
     if (updatedEvents?.length) {
       const updatePromises = updatedEvents
         .filter((e) => e.title === "Available Slot" && e._id)

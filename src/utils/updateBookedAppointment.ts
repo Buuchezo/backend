@@ -356,6 +356,7 @@ export function updateEventHelperBackend({
   slotsToInsert: CalendarEventInput[];
   slotsToUpdate: CalendarEventInput[];
   groupedOverlappingIds: string[][];
+  originalAppointment: CalendarEventInput;
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
@@ -481,5 +482,6 @@ export function updateEventHelperBackend({
     updatedAppointment,
     slotsToUpdate,
     groupedOverlappingIds,
+    originalAppointment: original,
   };
 }
