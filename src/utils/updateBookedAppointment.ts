@@ -315,7 +315,7 @@ export function updateEventHelperBackend({
   updatedEvents: CalendarEventInput[];
   updatedAppointment: CalendarEventInput;
   slotsToInsert: CalendarEventInput[];
-  overlappingBookedIds: string[];
+  groupedOverlappingIds: string[][];
   slotsToUpdate: CalendarEventInput[];
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
@@ -434,12 +434,15 @@ export function updateEventHelperBackend({
     clientName: eventData.clientName ?? original.clientName ?? "Guest",
   };
 
-  const overlappingBookedIds = events
+  const groupedOverlappingIds: string[][] = [];
+
+  // Group 1: IDs from new time range
+  const newSlotIds = events
     .filter((e) => {
       const eStart = parseISO(e.start);
       const eEnd = parseISO(e.end);
       return (
-        (e.calendarId === "booked" || e.title?.startsWith("Available Slot")) &&
+        (e.calendarId === "booked" || e.title === "Available Slot") &&
         eEnd > newStart &&
         eStart < newEnd
       );
@@ -447,15 +450,30 @@ export function updateEventHelperBackend({
     .map((e) => e._id?.toString())
     .filter((id): id is string => !!id);
 
-  console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
+  // Group 2: IDs from original time range (excluding new overlap)
+  const originalSlotIds = events
+    .filter((e) => {
+      const eStart = parseISO(e.start);
+      const eEnd = parseISO(e.end);
+      return (
+        (e.calendarId === "booked" || e.title === "Available Slot") &&
+        eEnd > originalStart &&
+        eStart < originalEnd &&
+        !(eEnd > newStart && eStart < newEnd) // exclude those already in new range
+      );
+    })
+    .map((e) => e._id?.toString())
+    .filter((id): id is string => !!id);
 
+  groupedOverlappingIds.push(newSlotIds, originalSlotIds);
 
+  console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
 
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
-    overlappingBookedIds,
+    groupedOverlappingIds,
     slotsToUpdate: allAvailableSlots.filter(
       (s) => typeof s.remainingCapacity === "number"
     ),
