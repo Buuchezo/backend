@@ -335,10 +335,7 @@ function groupOverlappingSlots(events: CalendarEventInput[]): string[][] {
     }
 
     if (!added) {
-      groups.push({
-        ids: [eId],
-        range: [eStart, eEnd],
-      });
+      groups.push({ ids: [eId], range: [eStart, eEnd] });
     }
   }
 
@@ -373,6 +370,8 @@ export function updateEventHelperBackend({
 
   const newStart = parseISO(formattedStart);
   const newEnd = parseISO(formattedEnd);
+  const originalStart = parseISO(original.start);
+  const originalEnd = parseISO(original.end);
   const newClientId = original.clientId?.toString();
 
   const hasConflict = events.some((e) => {
@@ -386,43 +385,56 @@ export function updateEventHelperBackend({
 
   if (hasConflict) throw new Error("Booking conflict for this timeslot.");
 
-  const originalStart = parseISO(original.start);
-  const originalEnd = parseISO(original.end);
-
   const allAvailableSlots = events.filter((e) =>
     e.title?.startsWith("Available Slot")
   );
 
   const slotsToUpdate: CalendarEventInput[] = [];
 
+  // ✅ Restore capacity in original slots no longer used
   for (const slot of allAvailableSlots) {
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
-    const overlapsOriginal =
-      slotStart < originalEnd &&
-      slotEnd > originalStart &&
-      !(slotStart < newEnd && slotEnd > newStart);
-    if (overlapsOriginal && typeof slot.remainingCapacity === "number") {
+    const wasInOriginal = rangesOverlap(
+      slotStart,
+      slotEnd,
+      originalStart,
+      originalEnd
+    );
+    const notInNew = !rangesOverlap(slotStart, slotEnd, newStart, newEnd);
+
+    if (
+      wasInOriginal &&
+      notInNew &&
+      typeof slot.remainingCapacity === "number"
+    ) {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
       slotsToUpdate.push(slot);
     }
   }
 
+  // ✅ Reduce capacity only in newly overlapped slots
   for (const slot of allAvailableSlots) {
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
-    const overlapsNew =
-      slotStart < newEnd &&
-      slotEnd > newStart &&
-      !(slotStart < originalEnd && slotEnd > originalStart);
-    if (overlapsNew && typeof slot.remainingCapacity === "number") {
+    const isInNew = rangesOverlap(slotStart, slotEnd, newStart, newEnd);
+    const wasInOriginal = rangesOverlap(
+      slotStart,
+      slotEnd,
+      originalStart,
+      originalEnd
+    );
+    const isNewlyUsedSlot = isInNew && !wasInOriginal;
+
+    if (isNewlyUsedSlot && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
       slotsToUpdate.push(slot);
     }
   }
 
+  // 🧹 Remove unused slots and original appointment
   const cleanedEvents = events.filter((e) => {
     if (e.title !== "Available Slot") return true;
     const eStart = parseISO(e.start);
@@ -431,7 +443,7 @@ export function updateEventHelperBackend({
   });
 
   const withoutOriginal = cleanedEvents.filter(
-    (e) => e._id?.toString() !== original._id?.toString()
+    (e) => e._id?.toString() !== original._id!.toString()
   );
 
   const beforeSlots = generateAvailableSlotsBetweenBackend(
