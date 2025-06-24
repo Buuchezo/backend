@@ -266,19 +266,38 @@ export const updateAppointment = catchAsync(async (req, res) => {
   const events = await SlotModel.find({});
 
   try {
-    const { updatedEvents, updatedAppointment, slotsToInsert, slotsToUpdate } =
-      updateEventHelperBackend({
-        eventData,
-        events,
-        workers,
-      });
+    const {
+      updatedEvents,
+      updatedAppointment,
+      slotsToInsert,
+      slotsToUpdate,
+      groupedOverlappingIds, // <- New
+    } = updateEventHelperBackend({
+      eventData,
+      events,
+      workers,
+    });
+
+    // 🧩 Flatten and dedupe grouped overlapping slot IDs
+    const flattenedUniqueIds = Array.from(
+      new Set(groupedOverlappingIds.flat().filter(Boolean))
+    );
+
+    console.log("🧩 Flattened overlapping slot IDs:", flattenedUniqueIds);
+
+    // 🔥 Delete slots that were reduced to 0 capacity
+    if (flattenedUniqueIds.length) {
+      await SlotModel.deleteMany({ _id: { $in: flattenedUniqueIds } });
+      console.log(
+        "🗑️ Deleted overlapping available slots:",
+        flattenedUniqueIds
+      );
+    }
 
     // ⬇️ Update slot capacities
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
-        if (!slot._id) continue;
-
-        if (typeof slot.remainingCapacity !== "number") continue; // ✅ Safeguard
+        if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
 
         if (slot.remainingCapacity <= 0) {
           await SlotModel.findByIdAndDelete(slot._id);

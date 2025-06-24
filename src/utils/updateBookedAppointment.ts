@@ -434,38 +434,35 @@ export function updateEventHelperBackend({
     clientName: eventData.clientName ?? original.clientName ?? "Guest",
   };
 
-  const groupedOverlappingIds: string[][] = [];
-
   // Group 1: IDs from new time range
-  const newSlotIds = events
-    .filter((e) => {
-      const eStart = parseISO(e.start);
-      const eEnd = parseISO(e.end);
+  const newSlotIds = allAvailableSlots
+    .filter((slot) => {
+      const start = parseISO(slot.start);
+      const end = parseISO(slot.end);
       return (
-        (e.calendarId === "booked" || e.title === "Available Slot") &&
-        eEnd > newStart &&
-        eStart < newEnd
+        start < newEnd &&
+        end > newStart &&
+        !(start < originalEnd && end > originalStart)
       );
     })
-    .map((e) => e._id?.toString())
+    .map((slot) => slot._id?.toString())
     .filter((id): id is string => !!id);
 
   // Group 2: IDs from original time range (excluding new overlap)
-  const originalSlotIds = events
-    .filter((e) => {
-      const eStart = parseISO(e.start);
-      const eEnd = parseISO(e.end);
+  const originalSlotIds = allAvailableSlots
+    .filter((slot) => {
+      const start = parseISO(slot.start);
+      const end = parseISO(slot.end);
       return (
-        (e.calendarId === "booked" || e.title === "Available Slot") &&
-        eEnd > originalStart &&
-        eStart < originalEnd &&
-        !(eEnd > newStart && eStart < newEnd) // exclude those already in new range
+        start < originalEnd &&
+        end > originalStart &&
+        !(start < newEnd && end > newStart)
       );
     })
-    .map((e) => e._id?.toString())
+    .map((slot) => slot._id?.toString())
     .filter((id): id is string => !!id);
 
-  groupedOverlappingIds.push(newSlotIds, originalSlotIds);
+  const groupedOverlappingIds: string[][] = [newSlotIds, originalSlotIds];
 
   console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
 
