@@ -277,18 +277,10 @@ export const updateAppointment = catchAsync(async (req, res) => {
       events,
       workers,
     });
-    if (!updatedAppointment._id) {
-      res.status(500).json({ error: "Updated appointment has no _id." });
-      return;
-    }
-    const updatedId = updatedAppointment._id.toString();
-    const currentGroup = groupedOverlappingIds.find((group) =>
-      group.includes(updatedId)
-    );
 
     console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
 
-    // ⬇️ Step 1: Update slots with modified remainingCapacity
+    // ⬇️ Update or delete capacity-adjusted slots
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
         if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
@@ -308,71 +300,33 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // ⬇️ Step 2: Adjust slots not in current group
-    for (const group of groupedOverlappingIds) {
-      if (group === currentGroup) continue;
-
-      for (const id of group) {
-        const slot = await SlotModel.findById(id);
-        if (!slot || typeof slot.remainingCapacity !== "number") continue;
-
-        const isOutsideNewRange =
-          parseISO(slot.end) <= parseISO(eventData.start) ||
-          parseISO(slot.start) >= parseISO(eventData.end);
-
-        if (isOutsideNewRange) {
-          const newCap = Math.min(slot.remainingCapacity + 1, 3);
-          await SlotModel.findByIdAndUpdate(
-            id,
-            {
-              remainingCapacity: newCap,
-              title: `Available Slot (${newCap} left)`,
-            },
-            { new: true }
-          );
-          console.log("🔄 Restored capacity for slot:", id);
-        } else {
-          const newCap = Math.max(0, slot.remainingCapacity - 1);
-          if (newCap <= 0) {
-            await SlotModel.findByIdAndDelete(id);
-            console.log("🗑️ Deleted slot due to 0 capacity:", id);
-          } else {
-            await SlotModel.findByIdAndUpdate(
-              id,
-              {
-                remainingCapacity: newCap,
-                title: `Available Slot (${newCap} left)`,
-              },
-              { new: true }
-            );
-            console.log("➖ Reduced capacity for slot:", id);
-          }
-        }
-      }
+    // 🧼 Ensure appointment is valid
+    if (!updatedAppointment._id) {
+      res.status(400).json({ error: "Invalid appointment ID." });
+      return;
     }
 
-    // 🧼 Ensure appointment exists
     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
     if (!appointmentExists) {
       res.status(404).json({ error: "Appointment not found." });
       return;
     }
 
-    // 🧹 Delete overlapping available slots in the new range
+    // ❌ Remove overlapping "available" slots in new range
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
     });
 
-    // 🛠 Update the appointment details
+    // 🛠 Update the main appointment
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // ➕ Insert newly generated slots
+    // ➕ Insert new generated slots
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -387,7 +341,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(insertPromises);
     }
 
-    // 💾 Update titles/capacities of other valid slots (if any)
+    // 💾 Update capacity of modified slots
     if (updatedEvents?.length) {
       const updatePromises = updatedEvents
         .filter((e) => e.title === "Available Slot" && e._id)
@@ -400,10 +354,71 @@ export const updateAppointment = catchAsync(async (req, res) => {
       await Promise.all(updatePromises);
     }
 
+    // 🧩 Reduce capacity on slots outside current group
+    if (groupedOverlappingIds?.length && updatedAppointment._id) {
+      const updatedId = updatedAppointment._id.toString();
+      const currentGroup = groupedOverlappingIds.find((group) =>
+        group.includes(updatedId)
+      );
+
+      const otherGroups = groupedOverlappingIds.filter(
+        (group) => group !== currentGroup
+      );
+
+      for (const group of otherGroups) {
+        for (const slotId of group) {
+          const slot = await SlotModel.findById(slotId);
+          if (!slot || typeof slot.remainingCapacity !== "number") continue;
+
+          const newCap = Math.max(0, slot.remainingCapacity - 1);
+
+          if (newCap <= 0) {
+            await SlotModel.findByIdAndDelete(slotId);
+          } else {
+            await SlotModel.findByIdAndUpdate(slotId, {
+              remainingCapacity: newCap,
+              title: `Available Slot (${newCap} left)`,
+            });
+          }
+        }
+      }
+
+      // 🧩 Restore capacity on slots no longer in the new overlap
+      const previousOverlapIds = events
+        .filter((e) => {
+          const eStart = parseISO(e.start);
+          const eEnd = parseISO(e.end);
+          return (
+            e.title === "Available Slot" &&
+            eEnd > parseISO(appointmentExists.start) &&
+            eStart < parseISO(appointmentExists.end)
+          );
+        })
+        .map((e) => e._id?.toString())
+        .filter(Boolean);
+
+      const currentOverlapIds = groupedOverlappingIds.flat();
+      const idsToRestore = previousOverlapIds.filter(
+        (id) => !currentOverlapIds.includes(id!)
+      );
+
+      for (const slotId of idsToRestore) {
+        const slot = await SlotModel.findById(slotId);
+        if (!slot || typeof slot.remainingCapacity !== "number") continue;
+
+        const restoredCap = Math.min(3, slot.remainingCapacity + 1);
+
+        await SlotModel.findByIdAndUpdate(slotId, {
+          remainingCapacity: restoredCap,
+          title: `Available Slot (${restoredCap} left)`,
+        });
+      }
+    }
+
     res.status(200).json({
       success: true,
       updatedEvent: updatedAppointment,
-      groupedOverlappingIds, // Optional for frontend inspection
+      groupedOverlappingIds,
     });
   } catch (error) {
     const message =
