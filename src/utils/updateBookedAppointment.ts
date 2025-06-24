@@ -303,6 +303,48 @@ export function generateAvailableSlotsBetweenBackend(
 
 /////////////////////////////////////////////////////////////////////////////////
 
+function rangesOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date
+): boolean {
+  return aStart < bEnd && aEnd > bStart;
+}
+
+function groupOverlappingSlots(events: CalendarEventInput[]): string[][] {
+  const groups: { ids: string[]; range: [Date, Date] }[] = [];
+
+  for (const e of events) {
+    if (!e._id) continue;
+
+    const eStart = parseISO(e.start);
+    const eEnd = parseISO(e.end);
+    const eId = e._id.toString();
+
+    let added = false;
+    for (const group of groups) {
+      const [gStart, gEnd] = group.range;
+      if (rangesOverlap(eStart, eEnd, gStart, gEnd)) {
+        group.ids.push(eId);
+        group.range[0] = new Date(Math.min(gStart.getTime(), eStart.getTime()));
+        group.range[1] = new Date(Math.max(gEnd.getTime(), eEnd.getTime()));
+        added = true;
+        break;
+      }
+    }
+
+    if (!added) {
+      groups.push({
+        ids: [eId],
+        range: [eStart, eEnd],
+      });
+    }
+  }
+
+  return groups.map((g) => g.ids);
+}
+
 export function updateEventHelperBackend({
   eventData,
   events,
@@ -316,7 +358,6 @@ export function updateEventHelperBackend({
   updatedAppointment: CalendarEventInput;
   slotsToInsert: CalendarEventInput[];
   slotsToUpdate: CalendarEventInput[];
-  overlappingBookedIds: string[];
   groupedOverlappingIds: string[][];
 } {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
@@ -333,9 +374,6 @@ export function updateEventHelperBackend({
   const newStart = parseISO(formattedStart);
   const newEnd = parseISO(formattedEnd);
   const newClientId = original.clientId?.toString();
-
-  console.log("🔍 Checking for conflicts with:");
-  console.log("🆕 New range:", newStart, newEnd);
 
   const hasConflict = events.some((e) => {
     const isBooked =
@@ -354,35 +392,20 @@ export function updateEventHelperBackend({
   const allAvailableSlots = events.filter((e) =>
     e.title?.startsWith("Available Slot")
   );
-  const slotsToUpdate: CalendarEventInput[] = [];
 
-  function stripToTimeOnly(date: Date): number {
-    return date.getUTCHours() * 60 + date.getUTCMinutes();
-  }
+  const slotsToUpdate: CalendarEventInput[] = [];
 
   for (const slot of allAvailableSlots) {
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
-    const slotStartTime = stripToTimeOnly(slotStart);
-    const slotEndTime = stripToTimeOnly(slotEnd);
-    const originalStartTime = stripToTimeOnly(originalStart);
-    const originalEndTime = stripToTimeOnly(originalEnd);
-    const newStartTime = stripToTimeOnly(newStart);
-    const newEndTime = stripToTimeOnly(newEnd);
-
     const overlapsOriginal =
-      slotStartTime < originalEndTime &&
-      slotEndTime > originalStartTime &&
-      !(slotStartTime < newEndTime && slotEndTime > newStartTime);
-
+      slotStart < originalEnd &&
+      slotEnd > originalStart &&
+      !(slotStart < newEnd && slotEnd > newStart);
     if (overlapsOriginal && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
       slotsToUpdate.push(slot);
-      console.log(
-        "🔄 Restoring capacity in original slot:",
-        slot._id?.toString()
-      );
     }
   }
 
@@ -390,22 +413,13 @@ export function updateEventHelperBackend({
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
 
-    const slotStartTime = stripToTimeOnly(slotStart);
-    const slotEndTime = stripToTimeOnly(slotEnd);
-    const originalStartTime = stripToTimeOnly(originalStart);
-    const originalEndTime = stripToTimeOnly(originalEnd);
-    const newStartTime = stripToTimeOnly(newStart);
-    const newEndTime = stripToTimeOnly(newEnd);
-
     const overlapsNew =
-      slotStartTime < newEndTime &&
-      slotEndTime > newStartTime &&
-      !(slotStartTime < originalEndTime && slotEndTime > originalStartTime);
-
+      slotStart < newEnd &&
+      slotEnd > newStart &&
+      !(slotStart < originalEnd && slotEnd > originalStart);
     if (overlapsNew && typeof slot.remainingCapacity === "number") {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
       slotsToUpdate.push(slot);
-      console.log("➖ Reducing capacity in new slot:", slot._id?.toString());
     }
   }
 
@@ -417,7 +431,7 @@ export function updateEventHelperBackend({
   });
 
   const withoutOriginal = cleanedEvents.filter(
-    (e) => e._id?.toString() !== original._id!.toString()
+    (e) => e._id?.toString() !== original._id?.toString()
   );
 
   const beforeSlots = generateAvailableSlotsBetweenBackend(
@@ -426,13 +440,9 @@ export function updateEventHelperBackend({
   );
   const afterSlots = generateAvailableSlotsBetweenBackend(newEnd, originalEnd);
 
-  console.log("➕ Generated before slots:", beforeSlots.length);
-  console.log("➕ Generated after slots:", afterSlots.length);
-
   const assignedWorker = workers.find(
     (w) => w._id?.toString() === original.ownerId?.toString()
   );
-
   const dynamicTitle = assignedWorker
     ? `Booked Appointment with ${assignedWorker.firstName} ${assignedWorker.lastName}`
     : "Booked Appointment";
@@ -460,35 +470,19 @@ export function updateEventHelperBackend({
     );
   });
 
-  const overlappingBookedIds = overlappingEvents
-    .map((e) => e._id?.toString())
-    .filter((id): id is string => !!id);
+  const groupedOverlappingIds = groupOverlappingSlots(overlappingEvents);
 
-  console.log("🆔 overlappingBookedIds:", overlappingBookedIds);
-
-  // ✅ Group by time slot
-  const timeSlotMap = new Map<string, string[]>();
-  overlappingEvents.forEach((e) => {
-    const startKey = normalizeToScheduleXFormat(e.start);
-    const endKey = normalizeToScheduleXFormat(e.end);
-    const key = `${startKey}|${endKey}`;
-    const id = e._id?.toString();
-    if (!id) return;
-    if (!timeSlotMap.has(key)) {
-      timeSlotMap.set(key, []);
-    }
-    timeSlotMap.get(key)!.push(id);
-  });
-
-  const groupedOverlappingIds = Array.from(timeSlotMap.values());
   console.log("🧩 groupedOverlappingIds:", groupedOverlappingIds);
+  console.log(
+    "🆔 overlappingBookedIds:",
+    overlappingEvents.map((e) => e._id?.toString()).filter(Boolean)
+  );
 
   return {
     updatedEvents: [...beforeSlots, ...afterSlots],
     slotsToInsert: [...beforeSlots, ...afterSlots],
     updatedAppointment,
     slotsToUpdate,
-    overlappingBookedIds,
     groupedOverlappingIds,
   };
 }
