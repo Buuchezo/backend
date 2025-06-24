@@ -390,11 +390,16 @@ export function updateEventHelperBackend({
   );
 
   const slotsToUpdate: CalendarEventInput[] = [];
+  const slotIdSet = new Set();
 
-  // ✅ Restore capacity in original slots no longer used
+  // Collect only slots affected by the delta in overlap
   for (const slot of allAvailableSlots) {
     const slotStart = parseISO(slot.start);
     const slotEnd = parseISO(slot.end);
+    const slotKey = slot._id?.toString();
+
+    if (!slotKey || slotIdSet.has(slotKey)) continue;
+    slotIdSet.add(slotKey);
 
     const wasInOriginal = rangesOverlap(
       slotStart,
@@ -402,39 +407,19 @@ export function updateEventHelperBackend({
       originalStart,
       originalEnd
     );
-    const notInNew = !rangesOverlap(slotStart, slotEnd, newStart, newEnd);
+    const isInNew = rangesOverlap(slotStart, slotEnd, newStart, newEnd);
 
-    if (
-      wasInOriginal &&
-      notInNew &&
-      typeof slot.remainingCapacity === "number"
-    ) {
+    if (typeof slot.remainingCapacity !== "number") continue;
+
+    if (wasInOriginal && !isInNew) {
       slot.remainingCapacity = Math.min(slot.remainingCapacity + 1, 3);
       slotsToUpdate.push(slot);
-    }
-  }
-
-  // ✅ Reduce capacity only in newly overlapped slots
-  for (const slot of allAvailableSlots) {
-    const slotStart = parseISO(slot.start);
-    const slotEnd = parseISO(slot.end);
-
-    const isInNew = rangesOverlap(slotStart, slotEnd, newStart, newEnd);
-    const wasInOriginal = rangesOverlap(
-      slotStart,
-      slotEnd,
-      originalStart,
-      originalEnd
-    );
-    const isNewlyUsedSlot = isInNew && !wasInOriginal;
-
-    if (isNewlyUsedSlot && typeof slot.remainingCapacity === "number") {
+    } else if (!wasInOriginal && isInNew) {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
       slotsToUpdate.push(slot);
     }
   }
 
-  // 🧹 Remove unused slots and original appointment
   const cleanedEvents = events.filter((e) => {
     if (e.title !== "Available Slot") return true;
     const eStart = parseISO(e.start);
