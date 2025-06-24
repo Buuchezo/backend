@@ -1,4 +1,3 @@
-import { restoreSlotCapacities } from "../utils/restoreSlotCapacities";
 import { Request, Response, NextFunction } from "express";
 import { catchAsync } from "../utils/catchAsync";
 import { SlotModel } from "../models/slotsModel";
@@ -10,6 +9,7 @@ import mongoose from "mongoose";
 import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
 import { parseISO } from "date-fns";
 import { reassignAppointmentsHelper } from "../utils/reassignWorker";
+import { restoreSlotCapacities } from "../utils/restoreSlotCapacities";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {
@@ -481,4 +481,23 @@ export const deleteAppointment = catchAsync(async (req, res) => {
   });
 
   res.status(200).json({ success: true });
+});
+
+export const markWorkerSick = catchAsync(async (req, res) => {
+  const { workerId } = req.body;
+  if (!workerId) {
+    res.status(400).json({ error: "Missing workerId" });
+    return;
+  }
+
+  try {
+    await reassignAppointmentsHelper(workerId);
+    res
+      .status(200)
+      .json({ success: true, message: "Appointments reassigned." });
+  } catch (error) {
+    console.error(" Error in reassignAppointmentsHelper:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    res.status(500).json({ success: false, error: message });
+  }
 });

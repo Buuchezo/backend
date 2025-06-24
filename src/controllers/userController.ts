@@ -4,6 +4,7 @@ import { catchAsync } from '../utils/catchAsync'
 import { AppError } from '../utils/appErrorr'
 import { AuthenticatedRequest } from './authenticationController'
 
+
 const filterObj = <T extends object, K extends keyof T>(
   obj: T,
   ...allowedFields: K[]
