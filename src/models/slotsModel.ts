@@ -12,6 +12,7 @@ export interface ISlot extends Document {
   sharedWith?: mongoose.Types.ObjectId[];
   visibility?: "public" | "internal";
   remainingCapacity?: number;
+  reducedSlotIds?: mongoose.Types.ObjectId[];
 }
 
 const slotSchema = new Schema<ISlot>({
@@ -34,6 +35,10 @@ const slotSchema = new Schema<ISlot>({
     default: "public",
   },
   remainingCapacity: { type: Number, default: 0 },
+  reducedSlotIds: {
+    type: [mongoose.Schema.Types.ObjectId],
+    default: [],
+  },
 });
 
 export const SlotModel = mongoose.model<ISlot>("slot", slotSchema);
