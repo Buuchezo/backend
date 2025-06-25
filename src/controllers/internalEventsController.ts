@@ -127,30 +127,30 @@ export const createInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData } = req.body;
 
-    if (!eventData || !eventData.start || !eventData.end) {
+    if (!eventData?.start || !eventData?.end) {
       res.status(400).json({ error: "Missing start or end time" });
       return;
     }
 
+    // Normalize the times
     const normalizedStart = normalizeToScheduleXFormat(eventData.start);
     const normalizedEnd = normalizeToScheduleXFormat(eventData.end);
 
-    // 1. Save the internal event with normalized times
+    // Save the internal event
     const newInternalEvent = await InternalEventModel.create({
       ...eventData,
       start: normalizedStart,
       end: normalizedEnd,
     });
 
-    // 2. Find all available slots within the internal meeting time
-    const slots = await SlotModel.find({
+    // Find generated slot(s) that overlap by time
+    const matchingSlots = await SlotModel.find({
       calendarId: "available",
       start: { $lt: normalizedEnd },
       end: { $gt: normalizedStart },
     });
 
-    // 3. Reduce capacity or delete affected slots
-    for (const slot of slots) {
+    for (const slot of matchingSlots) {
       if (typeof slot.remainingCapacity !== "number") continue;
 
       const newCap = Math.max(slot.remainingCapacity - 1, 0);
@@ -160,7 +160,7 @@ export const createInternalEvent = catchAsync(
       } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
           remainingCapacity: newCap,
-          title: "Available Slot", // Keep consistent title
+          title: "Available Slot", // maintain original format
         });
       }
     }
@@ -169,7 +169,7 @@ export const createInternalEvent = catchAsync(
       status: "success",
       data: {
         internalEvent: newInternalEvent,
-        affectedSlots: slots.map((s) => s._id),
+        affectedSlots: matchingSlots.map((s) => s._id),
       },
     });
   }
