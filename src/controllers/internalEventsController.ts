@@ -144,9 +144,9 @@ export const createInternalEvent = catchAsync(
 
     // 2. Find all available slots within the internal meeting time
     const slots = await SlotModel.find({
-      start: { $gte: normalizedStart },
-      end: { $lte: normalizedEnd },
       calendarId: "available",
+      start: { $lt: normalizedEnd },
+      end: { $gt: normalizedStart },
     });
 
     // 3. Reduce capacity or delete affected slots
