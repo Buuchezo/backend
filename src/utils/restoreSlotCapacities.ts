@@ -13,7 +13,7 @@ export async function restoreSlotCapacities(slotIds: string[]) {
 
     const newCap = Math.min(slot.remainingCapacity + 1, maxCapacity);
     slot.remainingCapacity = newCap;
-    slot.title = `Available Slot (${newCap} left)`;
+    slot.title = `Available Slot`;
 
     await slot.save();
     console.log("🔁 Restored capacity for slot:", id);
