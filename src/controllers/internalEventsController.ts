@@ -270,11 +270,10 @@ export const updateInternalEvent = catchAsync(
       return next(new AppError("No internal event found with that id", 404));
     }
 
-    // Fetch total worker count and all slots
+    // Fetch total worker count
     const workerCount = await UserModel.countDocuments({ role: "worker" });
-    const allEvents = await SlotModel.find({});
 
-    // Normalize and parse new and original ranges
+    // Normalize and parse new and original time ranges
     const originalStart = parseISO(
       normalizeToScheduleXFormat(internalEvent.start)
     );
@@ -282,7 +281,7 @@ export const updateInternalEvent = catchAsync(
     const newStart = parseISO(normalizeToScheduleXFormat(start));
     const newEnd = parseISO(normalizeToScheduleXFormat(end));
 
-    // Step 1: Check availability for all shared workers
+    // Step 1: Check for overlapping internal events
     const overlappingEvents = await InternalEventModel.find({
       _id: { $ne: internalEventId },
       sharedWith: { $in: sharedWith },
@@ -295,30 +294,40 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // Step 2: Adjust public slots via helper logic
+    // Step 2: Adjust overlapping public slots based on change
     const previousParticipants = 1 + (internalEvent.sharedWith?.length || 0);
     const newParticipants = 1 + sharedWith.length;
 
-    const delta = newParticipants - previousParticipants;
+    const allSlots = await SlotModel.find({ calendarId: "available" });
 
-    const updatedSlots = allEvents.filter(
-      (e) =>
-        e.calendarId === "available" &&
-        parseISO(e.start) < newEnd &&
-        parseISO(e.end) > newStart
-    );
+    for (const slot of allSlots) {
+      const slotStart = parseISO(slot.start);
+      const slotEnd = parseISO(slot.end);
 
-    for (const slot of updatedSlots) {
-      const currentCap = slot.remainingCapacity ?? workerCount;
-      const newCap = Math.max(0, Math.min(workerCount, currentCap - delta));
+      const wasInOriginal = slotEnd > originalStart && slotStart < originalEnd;
+      const isInNew = slotEnd > newStart && slotStart < newEnd;
 
-      if (newCap <= 0) {
-        await SlotModel.findByIdAndDelete(slot._id);
-      } else {
-        await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: newCap,
-          title: "Available Slot",
-        });
+      let newCap = slot.remainingCapacity ?? workerCount;
+
+      if (wasInOriginal && !isInNew) {
+        // 🔁 Restore capacity
+        newCap = Math.min(workerCount, newCap + previousParticipants);
+      }
+
+      if (!wasInOriginal && isInNew) {
+        // ➖ Reduce capacity
+        newCap = Math.max(0, newCap - newParticipants);
+      }
+
+      if (wasInOriginal !== isInNew) {
+        if (newCap <= 0) {
+          await SlotModel.findByIdAndDelete(slot._id);
+        } else {
+          await SlotModel.findByIdAndUpdate(slot._id, {
+            remainingCapacity: newCap,
+            title: "Available Slot",
+          });
+        }
       }
     }
 
