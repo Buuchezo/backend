@@ -36,50 +36,50 @@ export const getInternalEvent = catchAsync(
   }
 );
 
-export const updateInternalEvent = catchAsync(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const { start, end, sharedWith = [] } = req.body;
+// export const updateInternalEvent = catchAsync(
+//   async (req: Request, res: Response, next: NextFunction) => {
+//     const { start, end, sharedWith = [] } = req.body;
 
-    // Validate required fields
-    if (!start || !end || !Array.isArray(sharedWith)) {
-      return next(new AppError("Missing required fields", 400));
-    }
+//     // Validate required fields
+//     if (!start || !end || !Array.isArray(sharedWith)) {
+//       return next(new AppError("Missing required fields", 400));
+//     }
 
-    // Step 1: Check availability for all workers
-    const overlappingEvents = await InternalEventModel.find({
-      _id: { $ne: req.params.id }, // exclude the event being updated
-      sharedWith: { $in: sharedWith },
-      $or: [
-        { start: { $lt: end }, end: { $gt: start } }, // basic time overlap check
-      ],
-    });
+//     // Step 1: Check availability for all workers
+//     const overlappingEvents = await InternalEventModel.find({
+//       _id: { $ne: req.params.id }, // exclude the event being updated
+//       sharedWith: { $in: sharedWith },
+//       $or: [
+//         { start: { $lt: end }, end: { $gt: start } }, // basic time overlap check
+//       ],
+//     });
 
-    if (overlappingEvents.length > 0) {
-      return next(
-        new AppError("One or more workers are not available at this time", 400)
-      );
-    }
+//     if (overlappingEvents.length > 0) {
+//       return next(
+//         new AppError("One or more workers are not available at this time", 400)
+//       );
+//     }
 
-    // Step 2: Proceed with update
-    const internalEvent = await InternalEventModel.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
+//     // Step 2: Proceed with update
+//     const internalEvent = await InternalEventModel.findByIdAndUpdate(
+//       req.params.id,
+//       req.body,
+//       {
+//         new: true,
+//         runValidators: true,
+//       }
+//     );
 
-    if (!internalEvent) {
-      return next(new AppError("No internal event found with that id", 404));
-    }
+//     if (!internalEvent) {
+//       return next(new AppError("No internal event found with that id", 404));
+//     }
 
-    res.status(200).json({
-      status: "success",
-      data: { internalEvent },
-    });
-  }
-);
+//     res.status(200).json({
+//       status: "success",
+//       data: { internalEvent },
+//     });
+//   }
+// );
 
 // export const deleteInternalEvent = catchAsync(
 //   async (req: Request, res: Response, next: NextFunction) => {
@@ -166,10 +166,7 @@ export const deleteInternalEvent = catchAsync(
 
     if (!matchingSlot) {
       // Slot was fully deleted → regenerate it using helper
-      const newSlot = generateSlotForTimeRange(
-        parsedStart,
-        workerCount
-      );
+      const newSlot = generateSlotForTimeRange(parsedStart, workerCount);
       await SlotModel.create(newSlot);
       console.log("🆕 Slot recreated:", newSlot.start);
     } else {
@@ -255,6 +252,100 @@ export const createInternalEvent = catchAsync(
       data: {
         internalEvent: newInternalEvent,
       },
+    });
+  }
+);
+
+export const updateInternalEvent = catchAsync(
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { start, end, sharedWith = [] } = req.body;
+
+    if (!start || !end || !Array.isArray(sharedWith)) {
+      return next(new AppError("Missing required fields", 400));
+    }
+
+    const internalEventId = req.params.id;
+    const internalEvent = await InternalEventModel.findById(internalEventId);
+    if (!internalEvent) {
+      return next(new AppError("No internal event found with that id", 404));
+    }
+
+    // Fetch total worker count
+    const workerCount = await UserModel.countDocuments({ role: "worker" });
+
+    // Normalize and parse new and original ranges
+    const originalStart = parseISO(
+      normalizeToScheduleXFormat(internalEvent.start)
+    );
+    const originalEnd = parseISO(normalizeToScheduleXFormat(internalEvent.end));
+    const newStart = parseISO(normalizeToScheduleXFormat(start));
+    const newEnd = parseISO(normalizeToScheduleXFormat(end));
+
+    // Step 1: Check availability for all shared workers
+    const overlappingEvents = await InternalEventModel.find({
+      _id: { $ne: internalEventId },
+      sharedWith: { $in: sharedWith },
+      $or: [{ start: { $lt: end }, end: { $gt: start } }],
+    });
+
+    if (overlappingEvents.length > 0) {
+      return next(
+        new AppError("One or more workers are not available at this time", 400)
+      );
+    }
+
+    // Step 2: Restore capacity for previously occupied slots
+    const previouslyAffectedSlots = await SlotModel.find({
+      start: { $lt: originalEnd.toISOString() },
+      end: { $gt: originalStart.toISOString() },
+      calendarId: "available",
+    });
+
+    const previousParticipants = 1 + (internalEvent.sharedWith?.length || 0);
+    for (const slot of previouslyAffectedSlots) {
+      const restored = Math.min(
+        (slot.remainingCapacity ?? 0) + previousParticipants,
+        workerCount
+      );
+      await SlotModel.findByIdAndUpdate(slot._id, {
+        remainingCapacity: restored,
+        title: "Available Slot",
+      });
+    }
+
+    // Step 3: Reduce capacity for new slots
+    const affectedSlots = await SlotModel.find({
+      start: { $lt: newEnd.toISOString() },
+      end: { $gt: newStart.toISOString() },
+      calendarId: "available",
+    });
+
+    const newParticipants = 1 + sharedWith.length;
+    for (const slot of affectedSlots) {
+      const reduced = Math.max(
+        (slot.remainingCapacity ?? workerCount) - newParticipants,
+        0
+      );
+      if (reduced <= 0) {
+        await SlotModel.findByIdAndDelete(slot._id);
+      } else {
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: reduced,
+          title: "Available Slot",
+        });
+      }
+    }
+
+    // Step 4: Update the internal event
+    const updated = await InternalEventModel.findByIdAndUpdate(
+      internalEventId,
+      req.body,
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      status: "success",
+      data: { internalEvent: updated },
     });
   }
 );
