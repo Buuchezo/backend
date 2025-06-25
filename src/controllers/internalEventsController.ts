@@ -4,6 +4,7 @@ import { catchAsync } from "../utils/catchAsync";
 import { AppError } from "../utils/appErrorr";
 import mongoose from "mongoose";
 import { SlotModel } from "../models/slotsModel";
+import { format, parseISO } from "date-fns";
 
 export const getAllInternalEvents = catchAsync(
   async (req: Request, res: Response) => {
@@ -113,25 +114,42 @@ export const deleteInternalEvent = catchAsync(
 //   }
 // );
 
+function normalizeToScheduleXFormat(datetime: string): string {
+  try {
+    const parsed = parseISO(datetime);
+    return format(parsed, "yyyy-MM-dd HH:mm");
+  } catch {
+    return datetime;
+  }
+}
+
 export const createInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData } = req.body;
-    console.log(eventData.id)
 
-    if (!eventData || !eventData.id || !Array.isArray(eventData.id)) {
-       res.status(400).json({ error: "Missing or invalid slotIds" })
-       return;
+    if (!eventData || !eventData.start || !eventData.end) {
+      res.status(400).json({ error: "Missing start or end time" });
+      return;
     }
 
-    // Save the internal event
-    const newInternalEvent = await InternalEventModel.create(eventData);
+    const normalizedStart = normalizeToScheduleXFormat(eventData.start);
+    const normalizedEnd = normalizeToScheduleXFormat(eventData.end);
 
-    const validSlotIds = eventData.slotIds.filter((id: string) =>
-      mongoose.Types.ObjectId.isValid(id)
-    );
+    // 1. Save the internal event with normalized times
+    const newInternalEvent = await InternalEventModel.create({
+      ...eventData,
+      start: normalizedStart,
+      end: normalizedEnd,
+    });
 
-    const slots = await SlotModel.find({ _id: { $in: validSlotIds } });
+    // 2. Find all available slots within the internal meeting time
+    const slots = await SlotModel.find({
+      start: { $gte: normalizedStart },
+      end: { $lte: normalizedEnd },
+      calendarId: "available",
+    });
 
+    // 3. Reduce capacity or delete affected slots
     for (const slot of slots) {
       if (typeof slot.remainingCapacity !== "number") continue;
 
@@ -142,7 +160,7 @@ export const createInternalEvent = catchAsync(
       } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
           remainingCapacity: newCap,
-          title: "Available Slot", // Keep consistent
+          title: "Available Slot", // Keep consistent title
         });
       }
     }
@@ -151,6 +169,7 @@ export const createInternalEvent = catchAsync(
       status: "success",
       data: {
         internalEvent: newInternalEvent,
+        affectedSlots: slots.map((s) => s._id),
       },
     });
   }
