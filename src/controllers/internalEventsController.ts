@@ -116,8 +116,9 @@ export const deleteInternalEvent = catchAsync(
 export const createInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData } = req.body;
+    console.log(eventData.id)
 
-    if (!eventData || !eventData.slotIds || !Array.isArray(eventData.id)) {
+    if (!eventData || !eventData.id || !Array.isArray(eventData.id)) {
        res.status(400).json({ error: "Missing or invalid slotIds" })
        return;
     }
