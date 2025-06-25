@@ -310,7 +310,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
           const restoredCap = Math.min(slot.remainingCapacity + 1, 3);
           await SlotModel.findByIdAndUpdate(id, {
             remainingCapacity: restoredCap,
-            title: `Available Slot (${restoredCap} left)`,
+            title: `Available Slot`,
           });
           console.log("🔁 Restored capacity for slot:", id);
         }
@@ -324,7 +324,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
           } else {
             await SlotModel.findByIdAndUpdate(id, {
               remainingCapacity: reducedCap,
-              title: `Available Slot (${reducedCap} left)`,
+              title: `Available Slot`,
             });
             console.log("➖ Reduced capacity for slot:", id);
           }
