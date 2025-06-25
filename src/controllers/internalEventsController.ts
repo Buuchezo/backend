@@ -4,7 +4,7 @@ import { catchAsync } from "../utils/catchAsync";
 import { AppError } from "../utils/appErrorr";
 import mongoose from "mongoose";
 import { SlotModel } from "../models/slotsModel";
-import { format, parseISO } from "date-fns";
+import { addMinutes, format, parseISO } from "date-fns";
 import { UserModel } from "../models/userModel";
 import { IInternalEvent } from "../models/internalEventModel";
 
@@ -125,6 +125,21 @@ function normalizeToScheduleXFormat(datetime: string): string {
   }
 }
 
+export function generateSlotForTimeRange(start: Date, workerCount: number) {
+  const slotEnd = addMinutes(start, 60);
+
+  return {
+    title: "Available Slot",
+    description: "",
+    start: format(start, "yyyy-MM-dd HH:mm"),
+    end: format(slotEnd, "yyyy-MM-dd HH:mm"),
+    calendarId: "available",
+    remainingCapacity: workerCount,
+    sharedWith: [],
+    visibility: "public",
+  };
+}
+
 export const deleteInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -135,12 +150,13 @@ export const deleteInternalEvent = catchAsync(
       return;
     }
 
-    const normalizedStart = normalizeToScheduleXFormat(event.start); // "2025-06-26 08:00"
-    const normalizedEnd = normalizeToScheduleXFormat(event.end);
+    const parsedStart = parseISO(event.start);
+    const parsedEnd = parseISO(event.end);
+    const normalizedStart = format(parsedStart, "yyyy-MM-dd HH:mm");
+    const normalizedEnd = format(parsedEnd, "yyyy-MM-dd HH:mm");
 
     const workerCount = await UserModel.countDocuments({ role: "worker" });
-    const affectedUsersCount = 1 + (event.sharedWith?.length ?? 0);
-    const restoredCapacity = Math.min(workerCount, affectedUsersCount);
+    const participants = 1 + (event.sharedWith?.length ?? 0);
 
     const matchingSlot = await SlotModel.findOne({
       calendarId: "available",
@@ -149,25 +165,16 @@ export const deleteInternalEvent = catchAsync(
     });
 
     if (!matchingSlot) {
-      // 🆕 Create missing slot
-      await SlotModel.create({
-        title:
-          restoredCapacity < workerCount
-            ? `Available Slot (${workerCount - affectedUsersCount} left)`
-            : "Available Slot",
-        description: "",
-        start: normalizedStart,
-        end: normalizedEnd,
-        calendarId: "available",
-        remainingCapacity: workerCount - affectedUsersCount,
-        sharedWith: [],
-        visibility: "public",
-      });
-      console.log("🆕 Slot recreated:", normalizedStart, normalizedEnd);
+      // Slot was fully deleted → regenerate it using helper
+      const newSlot = generateSlotForTimeRange(
+        parsedStart,
+        workerCount - participants
+      );
+      await SlotModel.create(newSlot);
+      console.log("🆕 Slot recreated:", newSlot.start);
     } else {
-      // 🔁 Update existing slot
       const newCap = Math.min(
-        (matchingSlot.remainingCapacity ?? 0) + affectedUsersCount,
+        (matchingSlot.remainingCapacity ?? 0) + participants,
         workerCount
       );
 
@@ -178,8 +185,7 @@ export const deleteInternalEvent = catchAsync(
             ? `Available Slot (${newCap} left)`
             : "Available Slot",
       });
-
-      console.log(`🔁 Slot ${matchingSlot._id} capacity restored to ${newCap}`);
+      console.log(`🔁 Slot ${matchingSlot._id} restored to cap: ${newCap}`);
     }
 
     await InternalEventModel.findByIdAndDelete(id);
