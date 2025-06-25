@@ -84,7 +84,7 @@ export const createAppointment = catchAsync(
     // Update the related available slot's capacity (if still present)
     const updatedSlot = result.updatedEvents.find(
       (e) =>
-        e.title === "Available Slot" &&
+        e.title?.startsWith("Available Slot") &&
         e.start === result.newEvent.start &&
         e.end === result.newEvent.end
     );
