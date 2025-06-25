@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import { InternalEventModel } from "../models/internalEventModel";
 import { catchAsync } from "../utils/catchAsync";
 import { AppError } from "../utils/appErrorr";
+import mongoose from "mongoose";
+import { SlotModel } from "../models/slotsModel";
 
 export const getAllInternalEvents = catchAsync(
   async (req: Request, res: Response) => {
@@ -91,16 +93,58 @@ export const deleteInternalEvent = catchAsync(
 );
 
 // POST a new internal event
+// export const createInternalEvent = catchAsync(
+//   async (req: Request, res: Response) => {
+//     const { eventData } = req.body;
+
+//     if (!eventData) {
+//       res.status(400).json({ error: "Missing eventData in request body" });
+//       return;
+//     }
+
+//     const newInternalEvent = await InternalEventModel.create(eventData);
+
+//     res.status(201).json({
+//       status: "success",
+//       data: {
+//         internalEvent: newInternalEvent,
+//       },
+//     });
+//   }
+// );
+
 export const createInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData } = req.body;
 
-    if (!eventData) {
-      res.status(400).json({ error: "Missing eventData in request body" });
-      return;
+    if (!eventData || !eventData.slotIds || !Array.isArray(eventData.slotIds)) {
+       res.status(400).json({ error: "Missing or invalid slotIds" })
+       return;
     }
 
+    // Save the internal event
     const newInternalEvent = await InternalEventModel.create(eventData);
+
+    const validSlotIds = eventData.slotIds.filter((id: string) =>
+      mongoose.Types.ObjectId.isValid(id)
+    );
+
+    const slots = await SlotModel.find({ _id: { $in: validSlotIds } });
+
+    for (const slot of slots) {
+      if (typeof slot.remainingCapacity !== "number") continue;
+
+      const newCap = Math.max(slot.remainingCapacity - 1, 0);
+
+      if (newCap <= 0) {
+        await SlotModel.findByIdAndDelete(slot._id);
+      } else {
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: newCap,
+          title: "Available Slot", // Keep consistent
+        });
+      }
+    }
 
     res.status(201).json({
       status: "success",
