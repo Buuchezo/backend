@@ -138,44 +138,45 @@ export const deleteInternalEvent = catchAsync(
     const normalizedStart = normalizeToScheduleXFormat(event.start);
     const normalizedEnd = normalizeToScheduleXFormat(event.end);
 
-    // Get number of workers (used to restore max capacity if needed)
-    const workerCount = await UserModel.countDocuments({ role: "worker" });
+    const startISO = parseISO(normalizedStart).toISOString();
+    const endISO = parseISO(normalizedEnd).toISOString();
 
-    // Look for slots that were affected
+    const workerCount = await UserModel.countDocuments({ role: "worker" });
+    const affectedUsersCount = 1 + (event.sharedWith?.length ?? 0); // owner + others
+
     const overlappingSlots = await SlotModel.find({
       calendarId: "available",
-      start: { $lt: normalizedEnd },
-      end: { $gt: normalizedStart },
+      start: startISO,
+      end: endISO,
     });
 
     if (overlappingSlots.length === 0) {
-      // If no slot found, recreate the slot that was deleted when event was created
+      // 🆕 Recreate the deleted slot entirely
       await SlotModel.create({
         title: "Available Slot",
         description: "",
         start: normalizedStart,
         end: normalizedEnd,
         calendarId: "available",
-        remainingCapacity: 1,
+        remainingCapacity: workerCount - affectedUsersCount,
         sharedWith: [],
         visibility: "public",
       });
-      console.log("🆕 Recreated deleted slot");
+      console.log("🆕 Recreated missing slot");
     } else {
+      // 🔁 Update existing slot
       for (const slot of overlappingSlots) {
-        const restoredCap = Math.min(
-          (slot.remainingCapacity ?? 0) + 1,
+        const newCap = Math.min(
+          (slot.remainingCapacity ?? 0) + affectedUsersCount,
           workerCount
         );
 
         await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: restoredCap,
-          title: "Available Slot", // Keep title consistent
+          remainingCapacity: newCap,
+          title: "Available Slot",
         });
 
-        console.log(
-          `🔁 Restored capacity for slot ${slot._id}: ${restoredCap}`
-        );
+        console.log(`🔁 Restored capacity for slot ${slot._id}: ${newCap}`);
       }
     }
 
