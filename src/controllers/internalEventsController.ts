@@ -135,25 +135,26 @@ export const deleteInternalEvent = catchAsync(
       return;
     }
 
-    const normalizedStart = normalizeToScheduleXFormat(event.start);
+    const normalizedStart = normalizeToScheduleXFormat(event.start); // "2025-06-26 08:00"
     const normalizedEnd = normalizeToScheduleXFormat(event.end);
 
-    const startISO = parseISO(normalizedStart).toISOString();
-    const endISO = parseISO(normalizedEnd).toISOString();
-
     const workerCount = await UserModel.countDocuments({ role: "worker" });
-    const affectedUsersCount = 1 + (event.sharedWith?.length ?? 0); // owner + others
+    const affectedUsersCount = 1 + (event.sharedWith?.length ?? 0);
+    const restoredCapacity = Math.min(workerCount, affectedUsersCount);
 
-    const overlappingSlots = await SlotModel.find({
+    const matchingSlot = await SlotModel.findOne({
       calendarId: "available",
-      start: startISO,
-      end: endISO,
+      start: normalizedStart,
+      end: normalizedEnd,
     });
 
-    if (overlappingSlots.length === 0) {
-      // 🆕 Recreate the deleted slot entirely
+    if (!matchingSlot) {
+      // 🆕 Create missing slot
       await SlotModel.create({
-        title: "Available Slot",
+        title:
+          restoredCapacity < workerCount
+            ? `Available Slot (${workerCount - affectedUsersCount} left)`
+            : "Available Slot",
         description: "",
         start: normalizedStart,
         end: normalizedEnd,
@@ -162,22 +163,23 @@ export const deleteInternalEvent = catchAsync(
         sharedWith: [],
         visibility: "public",
       });
-      console.log("🆕 Recreated missing slot");
+      console.log("🆕 Slot recreated:", normalizedStart, normalizedEnd);
     } else {
       // 🔁 Update existing slot
-      for (const slot of overlappingSlots) {
-        const newCap = Math.min(
-          (slot.remainingCapacity ?? 0) + affectedUsersCount,
-          workerCount
-        );
+      const newCap = Math.min(
+        (matchingSlot.remainingCapacity ?? 0) + affectedUsersCount,
+        workerCount
+      );
 
-        await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: newCap,
-          title: "Available Slot",
-        });
+      await SlotModel.findByIdAndUpdate(matchingSlot._id, {
+        remainingCapacity: newCap,
+        title:
+          newCap < workerCount
+            ? `Available Slot (${newCap} left)`
+            : "Available Slot",
+      });
 
-        console.log(`🔁 Restored capacity for slot ${slot._id}: ${newCap}`);
-      }
+      console.log(`🔁 Slot ${matchingSlot._id} capacity restored to ${newCap}`);
     }
 
     await InternalEventModel.findByIdAndDelete(id);
