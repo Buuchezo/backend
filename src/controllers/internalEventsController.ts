@@ -127,49 +127,52 @@ export const createInternalEvent = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData } = req.body;
 
-    if (!eventData?.start || !eventData?.end) {
+    if (!eventData || !eventData.start || !eventData.end) {
       res.status(400).json({ error: "Missing start or end time" });
       return;
     }
 
-    // Normalize the times
     const normalizedStart = normalizeToScheduleXFormat(eventData.start);
     const normalizedEnd = normalizeToScheduleXFormat(eventData.end);
 
-    // Save the internal event
-    const newInternalEvent = await InternalEventModel.create({
-      ...eventData,
-      start: normalizedStart,
-      end: normalizedEnd,
-    });
+    console.log("🔍 Normalized Start:", normalizedStart);
+    console.log("🔍 Normalized End:", normalizedEnd);
 
-    // Find generated slot(s) that overlap by time
-    const matchingSlots = await SlotModel.find({
+    // ✅ Find all overlapping available slots
+    const overlappingSlots = await SlotModel.find({
       calendarId: "available",
       start: { $lt: normalizedEnd },
       end: { $gt: normalizedStart },
     });
 
-    for (const slot of matchingSlots) {
+    console.log(`🔎 Found ${overlappingSlots.length} overlapping slots`);
+
+    for (const slot of overlappingSlots) {
       if (typeof slot.remainingCapacity !== "number") continue;
 
       const newCap = Math.max(slot.remainingCapacity - 1, 0);
 
       if (newCap <= 0) {
         await SlotModel.findByIdAndDelete(slot._id);
+        console.log("❌ Deleted slot due to 0 capacity:", slot._id);
       } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
           remainingCapacity: newCap,
-          title: "Available Slot", // maintain original format
+          title: "Available Slot", // Keep consistent title
         });
+        console.log(`🔧 Updated slot ${slot._id} → new capacity: ${newCap}`);
       }
     }
+
+    // ✅ Create the internal event
+    const newInternalEvent = await InternalEventModel.create(eventData);
+
+    console.log("✅ Internal event created:", newInternalEvent._id);
 
     res.status(201).json({
       status: "success",
       data: {
         internalEvent: newInternalEvent,
-        affectedSlots: matchingSlots.map((s) => s._id),
       },
     });
   }
