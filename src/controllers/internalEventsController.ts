@@ -270,8 +270,9 @@ export const updateInternalEvent = catchAsync(
       return next(new AppError("No internal event found with that id", 404));
     }
 
-    // Fetch total worker count
+    // Fetch total worker count and all slots
     const workerCount = await UserModel.countDocuments({ role: "worker" });
+    const allEvents = await SlotModel.find({});
 
     // Normalize and parse new and original ranges
     const originalStart = parseISO(
@@ -294,49 +295,34 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // Step 2: Restore capacity for previously occupied slots
-    const previouslyAffectedSlots = await SlotModel.find({
-      start: { $lt: originalEnd.toISOString() },
-      end: { $gt: originalStart.toISOString() },
-      calendarId: "available",
-    });
-
+    // Step 2: Adjust public slots via helper logic
     const previousParticipants = 1 + (internalEvent.sharedWith?.length || 0);
-    for (const slot of previouslyAffectedSlots) {
-      const restored = Math.min(
-        (slot.remainingCapacity ?? 0) + previousParticipants,
-        workerCount
-      );
-      await SlotModel.findByIdAndUpdate(slot._id, {
-        remainingCapacity: restored,
-        title: "Available Slot",
-      });
-    }
-
-    // Step 3: Reduce capacity for new slots
-    const affectedSlots = await SlotModel.find({
-      start: { $lt: newEnd.toISOString() },
-      end: { $gt: newStart.toISOString() },
-      calendarId: "available",
-    });
-
     const newParticipants = 1 + sharedWith.length;
-    for (const slot of affectedSlots) {
-      const reduced = Math.max(
-        (slot.remainingCapacity ?? workerCount) - newParticipants,
-        0
-      );
-      if (reduced <= 0) {
+
+    const delta = newParticipants - previousParticipants;
+
+    const updatedSlots = allEvents.filter(
+      (e) =>
+        e.calendarId === "available" &&
+        parseISO(e.start) < newEnd &&
+        parseISO(e.end) > newStart
+    );
+
+    for (const slot of updatedSlots) {
+      const currentCap = slot.remainingCapacity ?? workerCount;
+      const newCap = Math.max(0, Math.min(workerCount, currentCap - delta));
+
+      if (newCap <= 0) {
         await SlotModel.findByIdAndDelete(slot._id);
       } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: reduced,
+          remainingCapacity: newCap,
           title: "Available Slot",
         });
       }
     }
 
-    // Step 4: Update the internal event
+    // Step 3: Update the internal event
     const updated = await InternalEventModel.findByIdAndUpdate(
       internalEventId,
       req.body,
