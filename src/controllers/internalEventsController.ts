@@ -168,7 +168,7 @@ export const deleteInternalEvent = catchAsync(
       // Slot was fully deleted → regenerate it using helper
       const newSlot = generateSlotForTimeRange(
         parsedStart,
-        workerCount - participants
+        workerCount
       );
       await SlotModel.create(newSlot);
       console.log("🆕 Slot recreated:", newSlot.start);
