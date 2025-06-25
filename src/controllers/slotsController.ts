@@ -463,7 +463,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
     for (const slot of overlappingSlots) {
       const newCap = Math.min((slot.remainingCapacity ?? 0) + 1, maxCapacity);
       slot.remainingCapacity = newCap;
-      slot.title = `Available Slot (${newCap} left)`;
+      slot.title = `Available Slot`;
       await slot.save();
     }
 
