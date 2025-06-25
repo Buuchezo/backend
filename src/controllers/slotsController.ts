@@ -344,7 +344,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
             slot._id,
             {
               remainingCapacity: slot.remainingCapacity,
-              title: `Available Slot (${slot.remainingCapacity} left)`,
+              title: `Available Slot`,
             },
             { new: true }
           );
