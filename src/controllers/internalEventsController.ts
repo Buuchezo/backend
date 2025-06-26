@@ -4,7 +4,7 @@ import { catchAsync } from "../utils/catchAsync";
 import { AppError } from "../utils/appErrorr";
 import mongoose from "mongoose";
 import { SlotModel } from "../models/slotsModel";
-import { addMinutes, format, parseISO } from "date-fns";
+import { addMinutes, format, isAfter, isBefore, parseISO } from "date-fns";
 import { UserModel } from "../models/userModel";
 import { IInternalEvent } from "../models/internalEventModel";
 import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
@@ -341,6 +341,38 @@ export const createInternalEvent = catchAsync(
 //   }
 // );
 
+async function restoreSlotFromRange(start: Date, participants: number) {
+  const normalizedStart = format(start, "yyyy-MM-dd HH:mm");
+  const normalizedEnd = format(addMinutes(start, 60), "yyyy-MM-dd HH:mm");
+  const workerCount = await UserModel.countDocuments({ role: "worker" });
+
+  const matchingSlot = await SlotModel.findOne({
+    calendarId: "available",
+    start: normalizedStart,
+    end: normalizedEnd,
+  });
+
+  if (!matchingSlot) {
+    const newSlot = generateSlotForTimeRange(start, workerCount);
+    await SlotModel.create(newSlot);
+    console.log("🆕 Slot recreated:", newSlot.start);
+  } else {
+    const newCap = Math.min(
+      (matchingSlot.remainingCapacity ?? 0) + participants,
+      workerCount
+    );
+
+    await SlotModel.findByIdAndUpdate(matchingSlot._id, {
+      remainingCapacity: newCap,
+      title:
+        newCap < workerCount
+          ? `Available Slot (${newCap} left)`
+          : "Available Slot",
+    });
+    console.log(`🔁 Slot ${matchingSlot._id} restored to cap: ${newCap}`);
+  }
+}
+
 export const updateInternalEvent = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const { start, end, sharedWith = [] } = req.body;
@@ -350,8 +382,13 @@ export const updateInternalEvent = catchAsync(
     }
 
     const internalEventId = req.params.id;
+    const previousEvent = await InternalEventModel.findById(internalEventId);
 
-    // 1️⃣ Check for conflicts
+    if (!previousEvent) {
+      return next(new AppError("No internal event found with that id", 404));
+    }
+
+    // 1️⃣ Check for overlaps
     const overlappingEvents = await InternalEventModel.find({
       _id: { $ne: internalEventId },
       sharedWith: { $in: sharedWith },
@@ -364,99 +401,61 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // 2️⃣ Get original event
-    const originalEvent = await InternalEventModel.findById(internalEventId);
-    if (!originalEvent) {
-      return next(new AppError("Original event not found", 404));
+    const totalWorkers = await UserModel.countDocuments({ role: "worker" });
+    const previousParticipants = 1 + (previousEvent.sharedWith?.length || 0);
+    const currentParticipants = 1 + sharedWith.length;
+
+    const oldStart = parseISO(previousEvent.start);
+    const oldEnd = parseISO(previousEvent.end);
+    const newStart = parseISO(start);
+    const newEnd = parseISO(end);
+
+    // 2️⃣ Find newly freed hours (was booked, now not booked)
+    let cursor = new Date(oldStart);
+    while (isBefore(cursor, oldEnd)) {
+      const next = addMinutes(cursor, 60);
+      if (isBefore(cursor, newStart) || isAfter(next, newEnd)) {
+        await restoreSlotFromRange(cursor, previousParticipants);
+      }
+      cursor = next;
     }
 
-    // 3️⃣ Normalize time
-    const normalizedNewStart = normalizeToScheduleXFormat(start);
-    const normalizedNewEnd = normalizeToScheduleXFormat(end);
-    const normalizedOldStart = normalizeToScheduleXFormat(originalEvent.start);
-    const normalizedOldEnd = normalizeToScheduleXFormat(originalEvent.end);
+    // 3️⃣ Adjust slots for new range
+    const normalizedStart = normalizeToScheduleXFormat(start);
+    const normalizedEnd = normalizeToScheduleXFormat(end);
 
-    // 4️⃣ Fetch total worker count
-    const totalWorkers = await UserModel.countDocuments({ role: "worker" });
-
-    // 5️⃣ Get all possibly affected slots
-    const affectedSlots = await SlotModel.find({
+    const overlappingSlots = await SlotModel.find({
       calendarId: "available",
-      $or: [
-        {
-          start: { $lt: normalizedOldEnd },
-          end: { $gt: normalizedOldStart },
-        },
-        {
-          start: { $lt: normalizedNewEnd },
-          end: { $gt: normalizedNewStart },
-        },
-      ],
+      start: { $lt: normalizedEnd },
+      end: { $gt: normalizedStart },
     });
 
-    // 6️⃣ Participants before and after
-    const oldParticipants = 1 + (originalEvent.sharedWith?.length ?? 0);
-    const newParticipants = 1 + sharedWith.length;
+    const newCap = Math.max(0, totalWorkers - currentParticipants);
 
-    for (const slot of affectedSlots) {
-      const slotStart = parseISO(slot.start);
-      const slotEnd = parseISO(slot.end);
-
-      const wasInOld =
-        slotStart < parseISO(normalizedOldEnd) &&
-        slotEnd > parseISO(normalizedOldStart);
-      const isInNew =
-        slotStart < parseISO(normalizedNewEnd) &&
-        slotEnd > parseISO(normalizedNewStart);
-
-      if (wasInOld && !isInNew) {
-        // 🔁 Restore
-        const restoredCap = Math.min(
-          (slot.remainingCapacity ?? 0) + oldParticipants,
-          totalWorkers
-        );
+    for (const slot of overlappingSlots) {
+      if (newCap <= 0) {
+        await SlotModel.findByIdAndDelete(slot._id);
+      } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: restoredCap,
-          title: "Available Slot",
+          remainingCapacity: newCap,
+          title:
+            newCap < totalWorkers
+              ? `Available Slot (${newCap} left)`
+              : "Available Slot",
         });
-        console.log(`🔁 Restored slot ${slot._id} to ${restoredCap}`);
-      }
-
-      if (!wasInOld && isInNew) {
-        // ➖ Reduce
-        const reducedCap = Math.max(
-          (slot.remainingCapacity ?? totalWorkers) - newParticipants,
-          0
-        );
-        if (reducedCap <= 0) {
-          await SlotModel.findByIdAndDelete(slot._id);
-          console.log(`❌ Deleted slot ${slot._id}`);
-        } else {
-          await SlotModel.findByIdAndUpdate(slot._id, {
-            remainingCapacity: reducedCap,
-            title: "Available Slot",
-          });
-          console.log(`➖ Reduced slot ${slot._id} to ${reducedCap}`);
-        }
       }
     }
 
-    // 7️⃣ Update internal event
-    const internalEvent = await InternalEventModel.findByIdAndUpdate(
+    // 4️⃣ Apply the update
+    const updated = await InternalEventModel.findByIdAndUpdate(
       internalEventId,
       req.body,
       { new: true, runValidators: true }
     );
 
-    if (!internalEvent) {
-      return next(new AppError("No internal event found after update", 404));
-    }
-
     res.status(200).json({
       status: "success",
-      data: {
-        internalEvent,
-      },
+      data: { internalEvent: updated },
     });
   }
 );
