@@ -410,7 +410,7 @@ export const updateInternalEvent = catchAsync(
     const newStart = parseISO(start);
     const newEnd = parseISO(end);
 
-    // 2️⃣ Find newly freed hours (was booked, now not booked)
+    // 🔁 Restore freed slots from shortened time range
     let cursor = new Date(oldStart);
     while (isBefore(cursor, oldEnd)) {
       const next = addMinutes(cursor, 60);
@@ -418,6 +418,34 @@ export const updateInternalEvent = catchAsync(
         await restoreSlotFromRange(cursor, previousParticipants);
       }
       cursor = next;
+    }
+
+    // 🆕 Recreate slots that were deleted due to full capacity, now reduced
+    let checkCursor = new Date(newStart);
+    while (isBefore(checkCursor, newEnd)) {
+      const next = addMinutes(checkCursor, 60);
+      const formattedStart = format(checkCursor, "yyyy-MM-dd HH:mm");
+      const formattedEnd = format(next, "yyyy-MM-dd HH:mm");
+
+      const slotExists = await SlotModel.findOne({
+        start: formattedStart,
+        end: formattedEnd,
+        calendarId: "available",
+      });
+
+      if (!slotExists && currentParticipants < totalWorkers) {
+        const recreatedSlot = generateSlotForTimeRange(
+          checkCursor,
+          totalWorkers - currentParticipants
+        );
+        await SlotModel.create(recreatedSlot);
+        console.log(
+          "🆕 Slot recreated after participant count change:",
+          recreatedSlot.start
+        );
+      }
+
+      checkCursor = next;
     }
 
     // 3️⃣ Adjust slots for new range
