@@ -266,9 +266,11 @@ export const updateInternalEvent = catchAsync(
       return next(new AppError("Missing required fields", 400));
     }
 
-    // Step 1: Check for conflicts
+    const internalEventId = req.params.id;
+
+    // 1️⃣ Check for overlapping internal events
     const overlappingEvents = await InternalEventModel.find({
-      _id: { $ne: req.params.id },
+      _id: { $ne: internalEventId },
       sharedWith: { $in: sharedWith },
       $or: [{ start: { $lt: end }, end: { $gt: start } }],
     });
@@ -279,11 +281,11 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // Step 2: Normalize and format times
+    // 2️⃣ Normalize time
     const normalizedStart = normalizeToScheduleXFormat(start);
     const normalizedEnd = normalizeToScheduleXFormat(end);
 
-    // Step 3: Fetch overlapping slots
+    // 3️⃣ Find all overlapping public slots
     const overlappingSlots = await SlotModel.find({
       calendarId: "available",
       start: { $lt: normalizedEnd },
@@ -293,12 +295,34 @@ export const updateInternalEvent = catchAsync(
     const overlappingSlotIds = overlappingSlots.map((slot) =>
       slot._id.toString()
     );
-
     console.log("🧩 Overlapping slot IDs:", overlappingSlotIds);
 
-    // Step 4: Update internal event
+    // 4️⃣ Count participants (owner + sharedWith)
+    const participantCount = 1 + sharedWith.length;
+
+    // 5️⃣ Fetch total worker count
+    const totalWorkers = await UserModel.countDocuments({ role: "worker" });
+
+    // 6️⃣ Adjust slots
+    for (const slot of overlappingSlots) {
+      const currentCap = slot.remainingCapacity ?? totalWorkers;
+      const newCap = Math.max(0, totalWorkers - participantCount);
+
+      if (newCap <= 0) {
+        await SlotModel.findByIdAndDelete(slot._id);
+        console.log(`❌ Slot ${slot._id} deleted`);
+      } else {
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: newCap,
+          title: "Available Slot",
+        });
+        console.log(`🔄 Slot ${slot._id} capacity updated to ${newCap}`);
+      }
+    }
+
+    // 7️⃣ Update the internal event
     const internalEvent = await InternalEventModel.findByIdAndUpdate(
-      req.params.id,
+      internalEventId,
       req.body,
       { new: true, runValidators: true }
     );
@@ -311,7 +335,7 @@ export const updateInternalEvent = catchAsync(
       status: "success",
       data: {
         internalEvent,
-        overlappingSlotIds, // ✅ Include slot IDs in response if needed
+        overlappingSlotIds,
       },
     });
   }
