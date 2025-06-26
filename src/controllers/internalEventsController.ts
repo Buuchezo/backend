@@ -258,6 +258,89 @@ export const createInternalEvent = catchAsync(
   }
 );
 
+// export const updateInternalEvent = catchAsync(
+//   async (req: Request, res: Response, next: NextFunction) => {
+//     const { start, end, sharedWith = [] } = req.body;
+
+//     if (!start || !end || !Array.isArray(sharedWith)) {
+//       return next(new AppError("Missing required fields", 400));
+//     }
+
+//     const internalEventId = req.params.id;
+
+//     // 1️⃣ Check for overlapping internal events
+//     const overlappingEvents = await InternalEventModel.find({
+//       _id: { $ne: internalEventId },
+//       sharedWith: { $in: sharedWith },
+//       $or: [{ start: { $lt: end }, end: { $gt: start } }],
+//     });
+
+//     if (overlappingEvents.length > 0) {
+//       return next(
+//         new AppError("One or more workers are not available at this time", 400)
+//       );
+//     }
+
+//     // 2️⃣ Normalize time
+//     const normalizedStart = normalizeToScheduleXFormat(start);
+//     const normalizedEnd = normalizeToScheduleXFormat(end);
+
+//     // 3️⃣ Find all overlapping public slots
+//     const overlappingSlots = await SlotModel.find({
+//       calendarId: "available",
+//       start: { $lt: normalizedEnd },
+//       end: { $gt: normalizedStart },
+//     });
+
+//     const overlappingSlotIds = overlappingSlots.map((slot) =>
+//       slot._id.toString()
+//     );
+//     console.log("🧩 Overlapping slot IDs:", overlappingSlotIds);
+
+//     // 4️⃣ Count participants (owner + sharedWith)
+//     const participantCount = 1 + sharedWith.length;
+
+//     // 5️⃣ Fetch total worker count
+//     const totalWorkers = await UserModel.countDocuments({ role: "worker" });
+
+//     // 6️⃣ Adjust slots
+//     for (const slot of overlappingSlots) {
+//       const currentCap = slot.remainingCapacity ?? totalWorkers;
+//       const newCap = Math.max(0, totalWorkers - participantCount);
+
+//       if (newCap <= 0) {
+//         await SlotModel.findByIdAndDelete(slot._id);
+//         console.log(`❌ Slot ${slot._id} deleted`);
+//       } else {
+//         await SlotModel.findByIdAndUpdate(slot._id, {
+//           remainingCapacity: newCap,
+//           title: "Available Slot",
+//         });
+//         console.log(`🔄 Slot ${slot._id} capacity updated to ${newCap}`);
+//       }
+//     }
+
+//     // 7️⃣ Update the internal event
+//     const internalEvent = await InternalEventModel.findByIdAndUpdate(
+//       internalEventId,
+//       req.body,
+//       { new: true, runValidators: true }
+//     );
+
+//     if (!internalEvent) {
+//       return next(new AppError("No internal event found with that id", 404));
+//     }
+
+//     res.status(200).json({
+//       status: "success",
+//       data: {
+//         internalEvent,
+//         overlappingSlotIds,
+//       },
+//     });
+//   }
+// );
+
 export const updateInternalEvent = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const { start, end, sharedWith = [] } = req.body;
@@ -268,7 +351,7 @@ export const updateInternalEvent = catchAsync(
 
     const internalEventId = req.params.id;
 
-    // 1️⃣ Check for overlapping internal events
+    // 1️⃣ Check for conflicts
     const overlappingEvents = await InternalEventModel.find({
       _id: { $ne: internalEventId },
       sharedWith: { $in: sharedWith },
@@ -281,46 +364,84 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // 2️⃣ Normalize time
-    const normalizedStart = normalizeToScheduleXFormat(start);
-    const normalizedEnd = normalizeToScheduleXFormat(end);
+    // 2️⃣ Get original event
+    const originalEvent = await InternalEventModel.findById(internalEventId);
+    if (!originalEvent) {
+      return next(new AppError("Original event not found", 404));
+    }
 
-    // 3️⃣ Find all overlapping public slots
-    const overlappingSlots = await SlotModel.find({
-      calendarId: "available",
-      start: { $lt: normalizedEnd },
-      end: { $gt: normalizedStart },
-    });
+    // 3️⃣ Normalize time
+    const normalizedNewStart = normalizeToScheduleXFormat(start);
+    const normalizedNewEnd = normalizeToScheduleXFormat(end);
+    const normalizedOldStart = normalizeToScheduleXFormat(originalEvent.start);
+    const normalizedOldEnd = normalizeToScheduleXFormat(originalEvent.end);
 
-    const overlappingSlotIds = overlappingSlots.map((slot) =>
-      slot._id.toString()
-    );
-    console.log("🧩 Overlapping slot IDs:", overlappingSlotIds);
-
-    // 4️⃣ Count participants (owner + sharedWith)
-    const participantCount = 1 + sharedWith.length;
-
-    // 5️⃣ Fetch total worker count
+    // 4️⃣ Fetch total worker count
     const totalWorkers = await UserModel.countDocuments({ role: "worker" });
 
-    // 6️⃣ Adjust slots
-    for (const slot of overlappingSlots) {
-      const currentCap = slot.remainingCapacity ?? totalWorkers;
-      const newCap = Math.max(0, totalWorkers - participantCount);
+    // 5️⃣ Get all possibly affected slots
+    const affectedSlots = await SlotModel.find({
+      calendarId: "available",
+      $or: [
+        {
+          start: { $lt: normalizedOldEnd },
+          end: { $gt: normalizedOldStart },
+        },
+        {
+          start: { $lt: normalizedNewEnd },
+          end: { $gt: normalizedNewStart },
+        },
+      ],
+    });
 
-      if (newCap <= 0) {
-        await SlotModel.findByIdAndDelete(slot._id);
-        console.log(`❌ Slot ${slot._id} deleted`);
-      } else {
+    // 6️⃣ Participants before and after
+    const oldParticipants = 1 + (originalEvent.sharedWith?.length ?? 0);
+    const newParticipants = 1 + sharedWith.length;
+
+    for (const slot of affectedSlots) {
+      const slotStart = parseISO(slot.start);
+      const slotEnd = parseISO(slot.end);
+
+      const wasInOld =
+        slotStart < parseISO(normalizedOldEnd) &&
+        slotEnd > parseISO(normalizedOldStart);
+      const isInNew =
+        slotStart < parseISO(normalizedNewEnd) &&
+        slotEnd > parseISO(normalizedNewStart);
+
+      if (wasInOld && !isInNew) {
+        // 🔁 Restore
+        const restoredCap = Math.min(
+          (slot.remainingCapacity ?? 0) + oldParticipants,
+          totalWorkers
+        );
         await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: newCap,
+          remainingCapacity: restoredCap,
           title: "Available Slot",
         });
-        console.log(`🔄 Slot ${slot._id} capacity updated to ${newCap}`);
+        console.log(`🔁 Restored slot ${slot._id} to ${restoredCap}`);
+      }
+
+      if (!wasInOld && isInNew) {
+        // ➖ Reduce
+        const reducedCap = Math.max(
+          (slot.remainingCapacity ?? totalWorkers) - newParticipants,
+          0
+        );
+        if (reducedCap <= 0) {
+          await SlotModel.findByIdAndDelete(slot._id);
+          console.log(`❌ Deleted slot ${slot._id}`);
+        } else {
+          await SlotModel.findByIdAndUpdate(slot._id, {
+            remainingCapacity: reducedCap,
+            title: "Available Slot",
+          });
+          console.log(`➖ Reduced slot ${slot._id} to ${reducedCap}`);
+        }
       }
     }
 
-    // 7️⃣ Update the internal event
+    // 7️⃣ Update internal event
     const internalEvent = await InternalEventModel.findByIdAndUpdate(
       internalEventId,
       req.body,
@@ -328,14 +449,13 @@ export const updateInternalEvent = catchAsync(
     );
 
     if (!internalEvent) {
-      return next(new AppError("No internal event found with that id", 404));
+      return next(new AppError("No internal event found after update", 404));
     }
 
     res.status(200).json({
       status: "success",
       data: {
         internalEvent,
-        overlappingSlotIds,
       },
     });
   }
