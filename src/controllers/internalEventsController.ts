@@ -7,6 +7,8 @@ import { SlotModel } from "../models/slotsModel";
 import { addMinutes, format, parseISO } from "date-fns";
 import { UserModel } from "../models/userModel";
 import { IInternalEvent } from "../models/internalEventModel";
+import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
+import { CalendarEventInput } from "../app";
 
 export const getAllInternalEvents = catchAsync(
   async (req: Request, res: Response) => {
@@ -264,26 +266,9 @@ export const updateInternalEvent = catchAsync(
       return next(new AppError("Missing required fields", 400));
     }
 
-    const internalEventId = req.params.id;
-    const internalEvent = await InternalEventModel.findById(internalEventId);
-    if (!internalEvent) {
-      return next(new AppError("No internal event found with that id", 404));
-    }
-
-    // Fetch total worker count
-    const workerCount = await UserModel.countDocuments({ role: "worker" });
-
-    // Normalize and parse new and original time ranges
-    const originalStart = parseISO(
-      normalizeToScheduleXFormat(internalEvent.start)
-    );
-    const originalEnd = parseISO(normalizeToScheduleXFormat(internalEvent.end));
-    const newStart = parseISO(normalizeToScheduleXFormat(start));
-    const newEnd = parseISO(normalizeToScheduleXFormat(end));
-
-    // Step 1: Check for overlapping internal events
+    // Step 1: Check for conflicts
     const overlappingEvents = await InternalEventModel.find({
-      _id: { $ne: internalEventId },
+      _id: { $ne: req.params.id },
       sharedWith: { $in: sharedWith },
       $or: [{ start: { $lt: end }, end: { $gt: start } }],
     });
@@ -294,53 +279,40 @@ export const updateInternalEvent = catchAsync(
       );
     }
 
-    // Step 2: Adjust overlapping public slots based on change
-    const previousParticipants = 1 + (internalEvent.sharedWith?.length || 0);
-    const newParticipants = 1 + sharedWith.length;
+    // Step 2: Normalize and format times
+    const normalizedStart = normalizeToScheduleXFormat(start);
+    const normalizedEnd = normalizeToScheduleXFormat(end);
 
-    const allSlots = await SlotModel.find({ calendarId: "available" });
+    // Step 3: Fetch overlapping slots
+    const overlappingSlots = await SlotModel.find({
+      calendarId: "available",
+      start: { $lt: normalizedEnd },
+      end: { $gt: normalizedStart },
+    });
 
-    for (const slot of allSlots) {
-      const slotStart = parseISO(slot.start);
-      const slotEnd = parseISO(slot.end);
+    const overlappingSlotIds = overlappingSlots.map((slot) =>
+      slot._id.toString()
+    );
 
-      const wasInOriginal = slotEnd > originalStart && slotStart < originalEnd;
-      const isInNew = slotEnd > newStart && slotStart < newEnd;
+    console.log("🧩 Overlapping slot IDs:", overlappingSlotIds);
 
-      let newCap = slot.remainingCapacity ?? workerCount;
-
-      if (wasInOriginal && !isInNew) {
-        // 🔁 Restore capacity
-        newCap = Math.min(workerCount, newCap + previousParticipants);
-      }
-
-      if (!wasInOriginal && isInNew) {
-        // ➖ Reduce capacity
-        newCap = Math.max(0, newCap - newParticipants);
-      }
-
-      if (wasInOriginal !== isInNew) {
-        if (newCap <= 0) {
-          await SlotModel.findByIdAndDelete(slot._id);
-        } else {
-          await SlotModel.findByIdAndUpdate(slot._id, {
-            remainingCapacity: newCap,
-            title: "Available Slot",
-          });
-        }
-      }
-    }
-
-    // Step 3: Update the internal event
-    const updated = await InternalEventModel.findByIdAndUpdate(
-      internalEventId,
+    // Step 4: Update internal event
+    const internalEvent = await InternalEventModel.findByIdAndUpdate(
+      req.params.id,
       req.body,
       { new: true, runValidators: true }
     );
 
+    if (!internalEvent) {
+      return next(new AppError("No internal event found with that id", 404));
+    }
+
     res.status(200).json({
       status: "success",
-      data: { internalEvent: updated },
+      data: {
+        internalEvent,
+        overlappingSlotIds, // ✅ Include slot IDs in response if needed
+      },
     });
   }
 );
