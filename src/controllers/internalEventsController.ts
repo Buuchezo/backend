@@ -38,86 +38,6 @@ export const getInternalEvent = catchAsync(
   }
 );
 
-// export const updateInternalEvent = catchAsync(
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     const { start, end, sharedWith = [] } = req.body;
-
-//     // Validate required fields
-//     if (!start || !end || !Array.isArray(sharedWith)) {
-//       return next(new AppError("Missing required fields", 400));
-//     }
-
-//     // Step 1: Check availability for all workers
-//     const overlappingEvents = await InternalEventModel.find({
-//       _id: { $ne: req.params.id }, // exclude the event being updated
-//       sharedWith: { $in: sharedWith },
-//       $or: [
-//         { start: { $lt: end }, end: { $gt: start } }, // basic time overlap check
-//       ],
-//     });
-
-//     if (overlappingEvents.length > 0) {
-//       return next(
-//         new AppError("One or more workers are not available at this time", 400)
-//       );
-//     }
-
-//     // Step 2: Proceed with update
-//     const internalEvent = await InternalEventModel.findByIdAndUpdate(
-//       req.params.id,
-//       req.body,
-//       {
-//         new: true,
-//         runValidators: true,
-//       }
-//     );
-
-//     if (!internalEvent) {
-//       return next(new AppError("No internal event found with that id", 404));
-//     }
-
-//     res.status(200).json({
-//       status: "success",
-//       data: { internalEvent },
-//     });
-//   }
-// );
-
-// export const deleteInternalEvent = catchAsync(
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     const internalEvent = await InternalEventModel.findByIdAndDelete(
-//       req.params.id
-//     );
-//     if (!internalEvent) {
-//       return next(new AppError("No internal event found with that id", 404));
-//     }
-//     res.status(204).json({
-//       status: "success",
-//     });
-//   }
-// );
-
-// POST a new internal event
-// export const createInternalEvent = catchAsync(
-//   async (req: Request, res: Response) => {
-//     const { eventData } = req.body;
-
-//     if (!eventData) {
-//       res.status(400).json({ error: "Missing eventData in request body" });
-//       return;
-//     }
-
-//     const newInternalEvent = await InternalEventModel.create(eventData);
-
-//     res.status(201).json({
-//       status: "success",
-//       data: {
-//         internalEvent: newInternalEvent,
-//       },
-//     });
-//   }
-// );
-
 function normalizeToScheduleXFormat(datetime: string): string {
   try {
     const parsed = parseISO(datetime);
@@ -170,7 +90,6 @@ export const deleteInternalEvent = catchAsync(
       // Slot was fully deleted → regenerate it using helper
       const newSlot = generateSlotForTimeRange(parsedStart, workerCount);
       await SlotModel.create(newSlot);
-      console.log("🆕 Slot recreated:", newSlot.start);
     } else {
       const newCap = Math.min(
         (matchingSlot.remainingCapacity ?? 0) + participants,
@@ -184,7 +103,6 @@ export const deleteInternalEvent = catchAsync(
             ? `Available Slot (${newCap} left)`
             : "Available Slot",
       });
-      console.log(`🔁 Slot ${matchingSlot._id} restored to cap: ${newCap}`);
     }
 
     await InternalEventModel.findByIdAndDelete(id);
@@ -217,7 +135,6 @@ export const createInternalEvent = catchAsync(
     // Save internal event
     const newInternalEvent: IInternalEvent =
       await InternalEventModel.create(eventData);
-    console.log("✅ Internal event created:", newInternalEvent._id.toString());
 
     const totalParticipants = 1 + (eventData.sharedWith?.length ?? 0);
 
@@ -239,13 +156,11 @@ export const createInternalEvent = catchAsync(
 
       if (newCap <= 0) {
         await SlotModel.findByIdAndDelete(slot._id);
-        console.log(`❌ Deleted slot ${slot._id} due to full capacity.`);
       } else {
         await SlotModel.findByIdAndUpdate(slot._id, {
           remainingCapacity: newCap,
           title: "Available Slot",
         });
-        console.log(`➖ Reduced slot ${slot._id} capacity to ${newCap}`);
       }
     }
 
@@ -257,89 +172,6 @@ export const createInternalEvent = catchAsync(
     });
   }
 );
-
-// export const updateInternalEvent = catchAsync(
-//   async (req: Request, res: Response, next: NextFunction) => {
-//     const { start, end, sharedWith = [] } = req.body;
-
-//     if (!start || !end || !Array.isArray(sharedWith)) {
-//       return next(new AppError("Missing required fields", 400));
-//     }
-
-//     const internalEventId = req.params.id;
-
-//     // 1️⃣ Check for overlapping internal events
-//     const overlappingEvents = await InternalEventModel.find({
-//       _id: { $ne: internalEventId },
-//       sharedWith: { $in: sharedWith },
-//       $or: [{ start: { $lt: end }, end: { $gt: start } }],
-//     });
-
-//     if (overlappingEvents.length > 0) {
-//       return next(
-//         new AppError("One or more workers are not available at this time", 400)
-//       );
-//     }
-
-//     // 2️⃣ Normalize time
-//     const normalizedStart = normalizeToScheduleXFormat(start);
-//     const normalizedEnd = normalizeToScheduleXFormat(end);
-
-//     // 3️⃣ Find all overlapping public slots
-//     const overlappingSlots = await SlotModel.find({
-//       calendarId: "available",
-//       start: { $lt: normalizedEnd },
-//       end: { $gt: normalizedStart },
-//     });
-
-//     const overlappingSlotIds = overlappingSlots.map((slot) =>
-//       slot._id.toString()
-//     );
-//     console.log("🧩 Overlapping slot IDs:", overlappingSlotIds);
-
-//     // 4️⃣ Count participants (owner + sharedWith)
-//     const participantCount = 1 + sharedWith.length;
-
-//     // 5️⃣ Fetch total worker count
-//     const totalWorkers = await UserModel.countDocuments({ role: "worker" });
-
-//     // 6️⃣ Adjust slots
-//     for (const slot of overlappingSlots) {
-//       const currentCap = slot.remainingCapacity ?? totalWorkers;
-//       const newCap = Math.max(0, totalWorkers - participantCount);
-
-//       if (newCap <= 0) {
-//         await SlotModel.findByIdAndDelete(slot._id);
-//         console.log(`❌ Slot ${slot._id} deleted`);
-//       } else {
-//         await SlotModel.findByIdAndUpdate(slot._id, {
-//           remainingCapacity: newCap,
-//           title: "Available Slot",
-//         });
-//         console.log(`🔄 Slot ${slot._id} capacity updated to ${newCap}`);
-//       }
-//     }
-
-//     // 7️⃣ Update the internal event
-//     const internalEvent = await InternalEventModel.findByIdAndUpdate(
-//       internalEventId,
-//       req.body,
-//       { new: true, runValidators: true }
-//     );
-
-//     if (!internalEvent) {
-//       return next(new AppError("No internal event found with that id", 404));
-//     }
-
-//     res.status(200).json({
-//       status: "success",
-//       data: {
-//         internalEvent,
-//         overlappingSlotIds,
-//       },
-//     });
-//   }
-// );
 
 async function restoreSlotFromRange(start: Date, participants: number) {
   const normalizedStart = format(start, "yyyy-MM-dd HH:mm");
@@ -355,7 +187,6 @@ async function restoreSlotFromRange(start: Date, participants: number) {
   if (!matchingSlot) {
     const newSlot = generateSlotForTimeRange(start, workerCount);
     await SlotModel.create(newSlot);
-    console.log("🆕 Slot recreated:", newSlot.start);
   } else {
     const newCap = Math.min(
       (matchingSlot.remainingCapacity ?? 0) + participants,
@@ -369,7 +200,6 @@ async function restoreSlotFromRange(start: Date, participants: number) {
           ? `Available Slot (${newCap} left)`
           : "Available Slot",
     });
-    console.log(`🔁 Slot ${matchingSlot._id} restored to cap: ${newCap}`);
   }
 }
 
@@ -439,10 +269,6 @@ export const updateInternalEvent = catchAsync(
           totalWorkers - currentParticipants
         );
         await SlotModel.create(recreatedSlot);
-        console.log(
-          "🆕 Slot recreated after participant count change:",
-          recreatedSlot.start
-        );
       }
 
       checkCursor = next;

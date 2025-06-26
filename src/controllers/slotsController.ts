@@ -139,127 +139,6 @@ export const getSlot = catchAsync(
   }
 );
 
-// export const updateAppointment = catchAsync(async (req, res) => {
-//   const { eventData } = req.body;
-
-//   const workers = await UserModel.find({ role: "worker" });
-//   const events = await SlotModel.find({});
-
-//   try {
-//     const { updatedEvents, updatedAppointment, slotsToInsert } =
-//       updateEventHelperBackend({
-//         eventData,
-//         events,
-//         workers,
-//       });
-
-//     // 🧹 Delete overlapping available slots ONLY
-//     await SlotModel.deleteMany({
-//       start: { $lt: parseISO(eventData.end) },
-//       end: { $gt: parseISO(eventData.start) },
-//       calendarId: "available",
-//     });
-
-//     //  Update the modified appointment
-//     await SlotModel.findByIdAndUpdate(
-//       updatedAppointment._id,
-//       updatedAppointment,
-//       { new: true }
-//     );
-
-//     //  Insert new available slots (from gaps)
-//     if (slotsToInsert?.length) {
-//       for (const slot of slotsToInsert) {
-//         // Ensure slot doesn't already exist
-//         const exists = await SlotModel.findOne({
-//           start: slot.start,
-//           end: slot.end,
-//           calendarId: "available",
-//         });
-
-//         if (!exists) {
-//           await SlotModel.create(slot);
-//         }
-//       }
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       updatedEvent: updatedAppointment,
-//     });
-//     return;
-//   } catch (error) {
-//     const message =
-//       error instanceof Error ? error.message : "Failed to update appointment.";
-//     res.status(409).json({ error: message });
-//   }
-// });
-
-///////
-// export const updateAppointment = catchAsync(async (req, res) => {
-//   const { eventData } = req.body;
-
-//   const workers = await UserModel.find({ role: "worker" });
-//   const events = await SlotModel.find({});
-
-//   try {
-//     const { updatedEvents, updatedAppointment, slotsToInsert } =
-//       updateEventHelperBackend({
-//         eventData,
-//         events,
-//         workers,
-//       });
-
-//     // 🧼 Ensure appointment exists
-//     const appointmentExists = await SlotModel.findById(updatedAppointment._id);
-//     if (!appointmentExists) {
-//       res.status(404).json({ error: "Appointment not found." });
-//       return;
-//     }
-
-//     // 🧹 Delete overlapping slots
-//     await SlotModel.deleteMany({
-//       start: { $lt: parseISO(eventData.end) },
-//       end: { $gt: parseISO(eventData.start) },
-//       calendarId: "available",
-//     });
-
-//     // 🛠 Update appointment
-//     await SlotModel.findByIdAndUpdate(
-//       updatedAppointment._id,
-//       updatedAppointment,
-//       { new: true }
-//     );
-
-//     // ➕ Insert new slots if needed
-//     if (slotsToInsert?.length) {
-//       const insertPromises = slotsToInsert.map(async (slot) => {
-//         const exists = await SlotModel.findOne({
-//           start: slot.start,
-//           end: slot.end,
-//           calendarId: "available",
-//         });
-
-//         if (!exists) {
-//           return SlotModel.create(slot);
-//         }
-//       });
-
-//       await Promise.all(insertPromises);
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       updatedEvent: updatedAppointment,
-//     });
-//   } catch (error) {
-//     const message =
-//       error instanceof Error ? error.message : "Failed to update appointment.";
-//     res.status(409).json({ error: message });
-//   }
-
-//////
-
 export const updateAppointment = catchAsync(async (req, res) => {
   const { eventData } = req.body;
 
@@ -312,7 +191,6 @@ export const updateAppointment = catchAsync(async (req, res) => {
             remainingCapacity: restoredCap,
             title: `Available Slot`,
           });
-          console.log("🔁 Restored capacity for slot:", id);
         }
 
         // ➖ Reduce capacity if now being used
@@ -320,13 +198,11 @@ export const updateAppointment = catchAsync(async (req, res) => {
           const reducedCap = Math.max(slot.remainingCapacity - 1, 0);
           if (reducedCap <= 0) {
             await SlotModel.findByIdAndDelete(id);
-            console.log("❌ Deleted slot:", id);
           } else {
             await SlotModel.findByIdAndUpdate(id, {
               remainingCapacity: reducedCap,
               title: `Available Slot`,
             });
-            console.log("➖ Reduced capacity for slot:", id);
           }
         }
       }

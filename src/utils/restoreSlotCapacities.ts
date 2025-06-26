@@ -16,6 +16,6 @@ export async function restoreSlotCapacities(slotIds: string[]) {
     slot.title = `Available Slot`;
 
     await slot.save();
-    console.log("🔁 Restored capacity for slot:", id);
+
   }
 }
