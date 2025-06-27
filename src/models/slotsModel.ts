@@ -6,7 +6,7 @@ export interface ISlot extends Document {
   description: string;
   start: string;
   end: string;
-  calendarId?: "available" | "booked";
+  calendarId?: "available" | "booked"| "fully booked";
   ownerId?: mongoose.Types.ObjectId;
   clientId?: mongoose.Types.ObjectId;
   clientName?: string;
