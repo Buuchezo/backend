@@ -239,6 +239,25 @@ export const createAppointment = catchAsync(
   }
 );
 
+export const getSlot = catchAsync(
+  async (
+    req: Request & { sanitizedQuery?: SanitizedQuery },
+    res: Response,
+    next: NextFunction
+  ) => {
+    const slot = await SlotModel.findById(req.params.id);
+    if (!slot) {
+      return next(new AppError("No slot found with that id", 404));
+    }
+    res.status(200).json({
+      status: "success",
+      data: {
+        slot,
+      },
+    });
+  }
+);
+
 // export const updateAppointment = catchAsync(async (req, res) => {
 //   const { eventData } = req.body;
 
