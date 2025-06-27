@@ -149,7 +149,7 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
 
 export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
-    const { eventData, userId, lastAssignedIndex } = req.body;
+    const { eventData, userId, lastAssignedIndex = 0 } = req.body;
 
     const user = await UserModel.findById(userId);
     if (!user) {
@@ -161,7 +161,7 @@ export const createAppointment = catchAsync(
 
     const rawEvents = await SlotModel.find({}).lean();
 
-    const events: CalendarEventInput[] = rawEvents.map((event) => ({
+    const events = rawEvents.map((event) => ({
       ...event,
       clientId: event.clientId?.toString(),
       ownerId: event.ownerId?.toString(),
@@ -190,7 +190,7 @@ export const createAppointment = catchAsync(
       events,
       user,
       workers,
-      lastAssignedIndex: lastAssignedIndex || 0,
+      lastAssignedIndex,
     });
 
     if (!result) {
@@ -200,29 +200,17 @@ export const createAppointment = catchAsync(
       return;
     }
 
+    // Save the new appointment to DB
     const dbReadyEvent = convertToSlotModelInput(result.newEvent);
     const savedEvent = await SlotModel.create(dbReadyEvent);
 
-    // Update the original available slot
-    const originalSlot = await SlotModel.findOne({
-      start: result.newEvent.start,
-      end: result.newEvent.end,
-      title: { $regex: /^Available Slot/i },
-    });
-
-    if (originalSlot) {
-      const updatedRemaining = Math.max(
-        0,
-        (originalSlot.remainingCapacity ?? workers.length) - 1
-      );
-      const isFullyBooked = updatedRemaining <= 0;
-
-      await SlotModel.findByIdAndUpdate(originalSlot._id, {
-        remainingCapacity: updatedRemaining,
-        calendarId: isFullyBooked ? "fully booked" : "available",
-        title: isFullyBooked
-          ? "Fully Booked Slot"
-          : `Available Slot (${updatedRemaining} left)`,
+    // Update the original slot if slotUpdate is returned
+    if (result.slotUpdate) {
+      const { slotId, newCapacity, calendarId, title } = result.slotUpdate;
+      await SlotModel.findByIdAndUpdate(slotId, {
+        remainingCapacity: newCapacity,
+        calendarId,
+        title,
       });
     }
 

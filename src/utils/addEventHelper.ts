@@ -197,6 +197,12 @@ export function addEventHelper({
   updatedEvents: CalendarEventInput[];
   lastAssignedIndex: number;
   newEvent: CalendarEventInput;
+  slotUpdate?: {
+    slotId: string;
+    newCapacity: number;
+    calendarId: "available" | "fully booked";
+    title: string;
+  };
 } | null {
   const formattedStart = normalizeToScheduleXFormat(eventData.start);
   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
@@ -259,6 +265,14 @@ export function addEventHelper({
   if (!freeWorker) return null;
 
   const updatedEvents = [...normalizedEvents];
+  let slotUpdate:
+    | {
+        slotId: string;
+        newCapacity: number;
+        calendarId: "available" | "fully booked";
+        title: string;
+      }
+    | undefined;
 
   const availableSlotIndex = updatedEvents.findIndex(
     (e) =>
@@ -271,10 +285,20 @@ export function addEventHelper({
     const slot = updatedEvents[availableSlotIndex];
     const currentCap = slot.remainingCapacity ?? workers.length;
     const newCap = Math.max(0, currentCap - 1);
+    const newCalendarId = newCap <= 0 ? "fully booked" : "available";
+    const newTitle =
+      newCap <= 0 ? "Fully Booked Slot" : `Available Slot (${newCap} left)`;
 
     updatedEvents[availableSlotIndex] = {
       ...slot,
       remainingCapacity: newCap,
+    };
+
+    slotUpdate = {
+      slotId: slot._id?.toString() ?? slot.id!,
+      newCapacity: newCap,
+      calendarId: newCalendarId,
+      title: newTitle,
     };
   }
 
@@ -301,5 +325,6 @@ export function addEventHelper({
     updatedEvents,
     lastAssignedIndex,
     newEvent,
+    slotUpdate,
   };
 }
