@@ -225,9 +225,7 @@ export function addEventHelper({
         ? new mongoose.Types.ObjectId(user._id)
         : undefined;
 
-  if (!clientId) {
-    return null;
-  }
+  if (!clientId) return null;
 
   const userAlreadyBooked = normalizedEvents.some((e) => {
     const sameClient = e.clientId?.toString() === clientId.toString();
@@ -240,9 +238,7 @@ export function addEventHelper({
     return (sameClient || legacyNameMatch) && timeOverlap;
   });
 
-  if (userAlreadyBooked) {
-    return null;
-  }
+  if (userAlreadyBooked) return null;
 
   let freeWorker: IUser | undefined;
   for (let i = 0; i < workers.length; i++) {
@@ -260,9 +256,7 @@ export function addEventHelper({
     }
   }
 
-  if (!freeWorker) {
-    return null;
-  }
+  if (!freeWorker) return null;
 
   const updatedEvents = [...normalizedEvents];
 
@@ -281,9 +275,6 @@ export function addEventHelper({
     updatedEvents[availableSlotIndex] = {
       ...slot,
       remainingCapacity: newCap,
-      calendarId: newCap <= 0 ? "fully booked" : "available",
-      title:
-        newCap <= 0 ? "Fully Booked Slot" : `Available Slot (${newCap} left)`,
     };
   }
 

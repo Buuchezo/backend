@@ -14,6 +14,7 @@ import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
 import { parseISO } from "date-fns";
 import { reassignAppointmentsHelper } from "../utils/reassignWorker";
 import { restoreSlotCapacities } from "../utils/restoreSlotCapacities";
+import { CalendarEventInput } from "../app";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
 
 function createAvailableSlot({
@@ -150,7 +151,6 @@ export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData, userId, lastAssignedIndex } = req.body;
 
-    // 1. Get user and workers
     const user = await UserModel.findById(userId);
     if (!user) {
       res.status(404).json({ error: "User not found" });
@@ -159,47 +159,19 @@ export const createAppointment = catchAsync(
 
     const workers = await UserModel.find({ role: "worker" });
 
-    // 2. Fetch all slots
     const rawEvents = await SlotModel.find({}).lean();
-    const events = rawEvents as unknown as ISlot[];
 
-    // 3. Format the start and end times
-    const formattedStart = normalizeToScheduleXFormat(eventData.start);
-    const formattedEnd = normalizeToScheduleXFormat(eventData.end);
-
-    // 4. Ensure the slot exists — create one if missing
-    let slot = events.find(
-      (e) =>
-        e.title?.startsWith("Available Slot") &&
-        normalizeToScheduleXFormat(e.start) === formattedStart &&
-        normalizeToScheduleXFormat(e.end) === formattedEnd
-    );
-
-    if (!slot) {
-      const newSlot = createAvailableSlot({
-        start: formattedStart,
-        end: formattedEnd,
-        workerCount: workers.length,
-      });
-
-      const slotDoc = new SlotModel(newSlot as ISlot);
-      await slotDoc.save();
-
-      const slotObj = slotDoc.toObject();
-      events.push(slotObj);
-      slot = slotObj;
-    }
-
-    // 5. Prevent double booking by normalizing clientId for check
-    const clientId = eventData.clientId?.toString() ?? user._id.toString();
-
-    const eventsForBookingCheck = events.map((e) => ({
-      ...e,
-      clientId: e.clientId?.toString(),
+    const events: CalendarEventInput[] = rawEvents.map((event) => ({
+      ...event,
+      clientId: event.clientId?.toString(),
+      ownerId: event.ownerId?.toString(),
+      _id: event._id,
     }));
 
+    const clientId = eventData.clientId?.toString() ?? user._id.toString();
+
     const isAlreadyBooked = hasClientDoubleBooked({
-      events: eventsForBookingCheck,
+      events,
       start: eventData.start,
       end: eventData.end,
       clientId,
@@ -213,7 +185,6 @@ export const createAppointment = catchAsync(
       return;
     }
 
-    // 6. Attempt to assign worker and create event
     const result = addEventHelper({
       eventData,
       events,
@@ -229,11 +200,10 @@ export const createAppointment = catchAsync(
       return;
     }
 
-    // 7. Save the booked appointment to DB
     const dbReadyEvent = convertToSlotModelInput(result.newEvent);
     const savedEvent = await SlotModel.create(dbReadyEvent);
 
-    // 8. Reduce the capacity and update calendarId on the original slot (do NOT remove it)
+    // Update the original available slot
     const originalSlot = await SlotModel.findOne({
       start: result.newEvent.start,
       end: result.newEvent.end,
@@ -250,11 +220,12 @@ export const createAppointment = catchAsync(
       await SlotModel.findByIdAndUpdate(originalSlot._id, {
         remainingCapacity: updatedRemaining,
         calendarId: isFullyBooked ? "fully booked" : "available",
-        title: `Available Slot (${updatedRemaining} left)`,
+        title: isFullyBooked
+          ? "Fully Booked Slot"
+          : `Available Slot (${updatedRemaining} left)`,
       });
     }
 
-    // 9. Respond with new event and updated index
     res.status(201).json({
       success: true,
       event: {
@@ -264,25 +235,7 @@ export const createAppointment = catchAsync(
       },
       lastAssignedIndex: result.lastAssignedIndex,
     });
-  }
-);
-
-export const getSlot = catchAsync(
-  async (
-    req: Request & { sanitizedQuery?: SanitizedQuery },
-    res: Response,
-    next: NextFunction
-  ) => {
-    const slot = await SlotModel.findById(req.params.id);
-    if (!slot) {
-      return next(new AppError("No slot found with that id", 404));
-    }
-    res.status(200).json({
-      status: "success",
-      data: {
-        slot,
-      },
-    });
+    return;
   }
 );
 
