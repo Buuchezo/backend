@@ -234,21 +234,23 @@ export const createAppointment = catchAsync(
     const savedEvent = await SlotModel.create(dbReadyEvent);
 
     // 8. Reduce the capacity and update calendarId on the original slot (do NOT remove it)
-    const existingSlot = await SlotModel.findOne({
+    const originalSlot = await SlotModel.findOne({
       start: result.newEvent.start,
       end: result.newEvent.end,
-      calendarId: { $in: ["available", "fully booked"] },
+      title: { $regex: /^Available Slot/i },
     });
 
-    if (existingSlot) {
-      const newRemaining =
-        (existingSlot.remainingCapacity ?? workers.length) - 1;
-      const isFullyBooked = newRemaining <= 0;
+    if (originalSlot) {
+      const updatedRemaining = Math.max(
+        0,
+        (originalSlot.remainingCapacity ?? workers.length) - 1
+      );
+      const isFullyBooked = updatedRemaining <= 0;
 
-      await SlotModel.findByIdAndUpdate(existingSlot._id, {
-        remainingCapacity: Math.max(0, newRemaining),
+      await SlotModel.findByIdAndUpdate(originalSlot._id, {
+        remainingCapacity: updatedRemaining,
         calendarId: isFullyBooked ? "fully booked" : "available",
-        title: `Available Slot (${Math.max(0, newRemaining)} left)`,
+        title: `Available Slot (${updatedRemaining} left)`,
       });
     }
 
