@@ -120,7 +120,7 @@ export interface CalendarEventInput {
   description: string;
   start: string;
   end: string;
-  calendarId?: "booked" | "available" ;
+  calendarId?: "booked" | "available" | "fully booked";
   ownerId?: Types.ObjectId | string;
   clientId?: Types.ObjectId | string;
   clientName?: string;

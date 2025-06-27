@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 
 export interface ISlot extends Document {
+  _id?: mongoose.Types.ObjectId;
   title: string;
   description: string;
   start: string;
@@ -22,7 +23,7 @@ const slotSchema = new Schema<ISlot>({
   end: { type: String, required: true },
   calendarId: {
     type: String,
-    enum: ["available", "booked"],
+    enum: ["available", "booked", "fully booked"],
     default: "available",
   },
   ownerId: { type: Schema.Types.ObjectId, ref: "User" },

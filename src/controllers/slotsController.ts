@@ -1,9 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import { catchAsync } from "../utils/catchAsync";
-import { SlotModel } from "../models/slotsModel";
+import { ISlot, SlotModel } from "../models/slotsModel";
 import { AppError } from "../utils/appErrorr";
 import { UserModel } from "../models/userModel";
-import { addEventHelper, hasClientDoubleBooked } from "../utils/addEventHelper";
+import {
+  addEventHelper,
+  hasClientDoubleBooked,
+  normalizeToScheduleXFormat,
+} from "../utils/addEventHelper";
 import { convertToSlotModelInput } from "../utils/convertToSlotMode";
 import mongoose from "mongoose";
 import { updateEventHelperBackend } from "../utils/updateBookedAppointment";
@@ -11,6 +15,28 @@ import { parseISO } from "date-fns";
 import { reassignAppointmentsHelper } from "../utils/reassignWorker";
 import { restoreSlotCapacities } from "../utils/restoreSlotCapacities";
 type SanitizedQuery = Record<string, string | string[] | undefined>;
+
+function createAvailableSlot({
+  start,
+  end,
+  workerCount,
+}: {
+  start: string;
+  end: string;
+  workerCount: number;
+}): Partial<ISlot> {
+  const id = new mongoose.Types.ObjectId();
+
+  return {
+    _id: id,
+    title: `Available Slot (${workerCount} left)`,
+    start,
+    end,
+    calendarId: "available",
+    remainingCapacity: workerCount,
+    description: "",
+  };
+}
 
 export const createSlots = catchAsync(async (req: Request, res: Response) => {
   const slots = req.body.slots;
@@ -29,6 +55,97 @@ export const createSlots = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+// export const createAppointment = catchAsync(
+//   async (req: Request, res: Response) => {
+//     const { eventData, userId, lastAssignedIndex } = req.body;
+
+//     const user = await UserModel.findById(userId);
+//     if (!user) {
+//       res.status(404).json({ error: "User not found" });
+//       return;
+//     }
+
+//     const workers = await UserModel.find({ role: "worker" });
+//     const events = (await SlotModel.find({}).lean()).map((event) => ({
+//       ...event,
+//       clientId: event.clientId?.toString(),
+//     })); // Consider filtering for relevant date range for performance
+
+//     // PRE-CHECK: Block duplicate booking by same user/client in overlapping timeslot
+//     const clientId = eventData.clientId?.toString() ?? user._id.toString();
+
+//     const isAlreadyBooked = hasClientDoubleBooked({
+//       events,
+//       start: eventData.start,
+//       end: eventData.end,
+//       clientId,
+//       clientName: eventData.clientName,
+//     });
+//     if (isAlreadyBooked) {
+//       res
+//         .status(409)
+//         .json({ error: "User is already booked for this time slot." });
+//       return;
+//     }
+
+//     // Proceed to book
+//     const result = addEventHelper({
+//       eventData,
+//       events,
+//       user,
+//       workers,
+//       lastAssignedIndex: lastAssignedIndex || 0,
+//     });
+
+//     if (!result) {
+//       res
+//         .status(400)
+//         .json({ error: "All workers are booked for this time slot." });
+//       return;
+//     }
+
+//     const dbReadyEvent = convertToSlotModelInput(result.newEvent);
+//     const savedEvent = await SlotModel.create(dbReadyEvent);
+
+//     // Update the related available slot's capacity (if still present)
+//     const updatedSlot = result.updatedEvents.find(
+//       (e) =>
+//         e.title?.startsWith("Available Slot") &&
+//         e.start === result.newEvent.start &&
+//         e.end === result.newEvent.end
+//     );
+
+//     if (
+//       updatedSlot &&
+//       updatedSlot._id &&
+//       typeof updatedSlot.remainingCapacity === "number"
+//     ) {
+//       if (updatedSlot.remainingCapacity <= 0) {
+//         await SlotModel.findByIdAndDelete(updatedSlot._id);
+//       } else {
+//         await SlotModel.findByIdAndUpdate(
+//           updatedSlot._id,
+//           {
+//             remainingCapacity: updatedSlot.remainingCapacity,
+//             title: `Available Slot (${updatedSlot.remainingCapacity} left)`,
+//           },
+//           { new: true }
+//         );
+//       }
+//     }
+
+//     res.status(201).json({
+//       success: true,
+//       event: {
+//         ...result.newEvent,
+//         id: savedEvent._id.toString(),
+//         _id: savedEvent._id.toString(),
+//       },
+//       lastAssignedIndex: result.lastAssignedIndex,
+//     });
+//   }
+// );
+
 export const createAppointment = catchAsync(
   async (req: Request, res: Response) => {
     const { eventData, userId, lastAssignedIndex } = req.body;
@@ -40,21 +157,53 @@ export const createAppointment = catchAsync(
     }
 
     const workers = await UserModel.find({ role: "worker" });
-    const events = (await SlotModel.find({}).lean()).map((event) => ({
-      ...event,
-      clientId: event.clientId?.toString(),
-    })); // Consider filtering for relevant date range for performance
 
-    // PRE-CHECK: Block duplicate booking by same user/client in overlapping timeslot
+    // Fetch events from DB as plain objects
+    const rawEvents = await SlotModel.find({}).lean();
+    const events = rawEvents as unknown as ISlot[]; // ✅ safe cast for TS
+
+    const formattedStart = normalizeToScheduleXFormat(eventData.start);
+    const formattedEnd = normalizeToScheduleXFormat(eventData.end);
+
+    // Ensure available slot exists
+    let slot = events.find(
+      (e) =>
+        e.title?.startsWith("Available Slot") &&
+        normalizeToScheduleXFormat(e.start) === formattedStart &&
+        normalizeToScheduleXFormat(e.end) === formattedEnd
+    );
+
+    if (!slot) {
+      const newSlot = createAvailableSlot({
+        start: formattedStart,
+        end: formattedEnd,
+        workerCount: workers.length,
+      });
+
+      const slotDoc = new SlotModel(newSlot as ISlot);
+      await slotDoc.save();
+
+      const slotObj = slotDoc.toObject();
+      events.push(slotObj);
+      slot = slotObj;
+    }
+
+    // Normalize events only for booking check
+    const eventsForBookingCheck = events.map((e) => ({
+      ...e,
+      clientId: e.clientId?.toString(),
+    }));
+
     const clientId = eventData.clientId?.toString() ?? user._id.toString();
 
     const isAlreadyBooked = hasClientDoubleBooked({
-      events,
+      events: eventsForBookingCheck,
       start: eventData.start,
       end: eventData.end,
       clientId,
       clientName: eventData.clientName,
     });
+
     if (isAlreadyBooked) {
       res
         .status(409)
@@ -62,7 +211,6 @@ export const createAppointment = catchAsync(
       return;
     }
 
-    // Proceed to book
     const result = addEventHelper({
       eventData,
       events,
@@ -81,7 +229,6 @@ export const createAppointment = catchAsync(
     const dbReadyEvent = convertToSlotModelInput(result.newEvent);
     const savedEvent = await SlotModel.create(dbReadyEvent);
 
-    // Update the related available slot's capacity (if still present)
     const updatedSlot = result.updatedEvents.find(
       (e) =>
         e.title?.startsWith("Available Slot") &&
@@ -94,18 +241,18 @@ export const createAppointment = catchAsync(
       updatedSlot._id &&
       typeof updatedSlot.remainingCapacity === "number"
     ) {
-      if (updatedSlot.remainingCapacity <= 0) {
-        await SlotModel.findByIdAndDelete(updatedSlot._id);
-      } else {
-        await SlotModel.findByIdAndUpdate(
-          updatedSlot._id,
-          {
-            remainingCapacity: updatedSlot.remainingCapacity,
-            title: `Available Slot (${updatedSlot.remainingCapacity} left)`,
-          },
-          { new: true }
-        );
-      }
+      const isFullyBooked = updatedSlot.remainingCapacity <= 0;
+      await SlotModel.findByIdAndUpdate(
+        updatedSlot._id,
+        {
+          remainingCapacity: updatedSlot.remainingCapacity,
+          calendarId: isFullyBooked ? "fully booked" : "available",
+          title: isFullyBooked
+            ? "Fully Booked Slot"
+            : `Available Slot (${updatedSlot.remainingCapacity} left)`,
+        },
+        { new: true }
+      );
     }
 
     res.status(201).json({
@@ -116,25 +263,6 @@ export const createAppointment = catchAsync(
         _id: savedEvent._id.toString(),
       },
       lastAssignedIndex: result.lastAssignedIndex,
-    });
-  }
-);
-
-export const getSlot = catchAsync(
-  async (
-    req: Request & { sanitizedQuery?: SanitizedQuery },
-    res: Response,
-    next: NextFunction
-  ) => {
-    const slot = await SlotModel.findById(req.params.id);
-    if (!slot) {
-      return next(new AppError("No slot found with that id", 404));
-    }
-    res.status(200).json({
-      status: "success",
-      data: {
-        slot,
-      },
     });
   }
 );
