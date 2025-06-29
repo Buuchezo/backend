@@ -288,6 +288,7 @@ export function updateEventHelperBackend({
   const originalStart = parseISO(original.start);
   const originalEnd = parseISO(original.end);
   const newClientId = original.clientId?.toString();
+  const MAX_CAPACITY = workers.length;
 
   const hasConflict = events.some((e) => {
     const isBooked =
@@ -300,88 +301,55 @@ export function updateEventHelperBackend({
 
   if (hasConflict) throw new Error("Booking conflict for this timeslot.");
 
-  const allSlots = events.filter(
-    (e) =>
-      e.title?.startsWith("Available Slot") || e.title === "Fully Booked Slot"
-  );
-
   const slotsToUpdate: CalendarEventInput[] = [];
-  const slotIdSet = new Set();
-  const MAX_CAPACITY = workers.length;
-
-  for (const slot of allSlots) {
-    const slotStart = parseISO(slot.start);
-    const slotEnd = parseISO(slot.end);
-    const slotKey = slot._id?.toString();
-    if (!slotKey || slotIdSet.has(slotKey)) continue;
-    slotIdSet.add(slotKey);
-
-    const wasInOriginal = rangesOverlap(
-      slotStart,
-      slotEnd,
-      originalStart,
-      originalEnd
-    );
-    const isInNew = rangesOverlap(slotStart, slotEnd, newStart, newEnd);
-
-    if (typeof slot.remainingCapacity !== "number") continue;
-
-    if (wasInOriginal && !isInNew) {
-      slot.remainingCapacity = Math.min(
-        slot.remainingCapacity + 1,
-        MAX_CAPACITY
-      );
-      slot.title =
-        slot.remainingCapacity <= 0
-          ? "Fully Booked Slot"
-          : slot.remainingCapacity >= MAX_CAPACITY
-            ? "Available Slot"
-            : `Available Slot (${slot.remainingCapacity} left)`;
-      slot.calendarId =
-        slot.remainingCapacity <= 0 ? "fully booked" : "available";
-      slotsToUpdate.push(slot);
-    }
-  }
+  const slotsToInsert: CalendarEventInput[] = [];
 
   const updatedSlotRange = generateAvailableSlotsBetweenBackend(
     newStart,
     newEnd
   );
-  const existingSlotTimes = events.map((e) => `${e.start}-${e.end}`);
-  const slotsToInsert: CalendarEventInput[] = [];
 
   for (const slot of updatedSlotRange) {
-    const key = `${slot.start}-${slot.end}`;
-    if (existingSlotTimes.includes(key)) continue;
+    const slotStart = parseISO(slot.start);
+    const slotEnd = parseISO(slot.end);
+    const slotKey = `${slot.start}-${slot.end}`;
 
-    const overlappingBookings = events.filter((e) => {
+    const existingSlot = events.find(
+      (e) =>
+        normalizeToScheduleXFormat(e.start) === slot.start &&
+        normalizeToScheduleXFormat(e.end) === slot.end &&
+        (e.title?.startsWith("Available Slot") ||
+          e.title === "Fully Booked Slot")
+    );
+
+    const overlappingAppointments = events.filter((e) => {
       return (
         e.calendarId === "booked" &&
-        parseISO(e.start) < parseISO(slot.end) &&
-        parseISO(e.end) > parseISO(slot.start)
+        parseISO(e.start) < slotEnd &&
+        parseISO(e.end) > slotStart
       );
     });
 
-    const isFullyBooked = overlappingBookings.length >= MAX_CAPACITY;
+    const isFullyBooked = overlappingAppointments.length >= MAX_CAPACITY;
+    const remainingCapacity = MAX_CAPACITY - overlappingAppointments.length;
 
-    if (isFullyBooked) {
-      slotsToInsert.push({
-        ...slot,
-        title: "Fully Booked Slot",
-        calendarId: "fully booked",
-        remainingCapacity: 0,
-      });
+    const slotData: CalendarEventInput = {
+      ...slot,
+      title: isFullyBooked
+        ? "Fully Booked Slot"
+        : remainingCapacity >= MAX_CAPACITY
+          ? "Available Slot"
+          : `Available Slot (${remainingCapacity} left)`,
+      calendarId: isFullyBooked ? "fully booked" : "available",
+      remainingCapacity: Math.max(remainingCapacity, 0),
+    };
+
+    if (existingSlot) {
+      slotData._id = existingSlot._id;
+      slotData.id = existingSlot._id?.toString();
+      slotsToUpdate.push({ ...existingSlot, ...slotData });
     } else {
-      const cap = MAX_CAPACITY - overlappingBookings.length;
-      slotsToInsert.push({
-        ...slot,
-        title:
-          cap >= MAX_CAPACITY
-            ? "Available Slot"
-            : `Available Slot (${cap} left)`,
-        calendarId: "available",
-        remainingCapacity: cap,
-      });
+      slotsToInsert.push(slotData);
     }
   }
 
