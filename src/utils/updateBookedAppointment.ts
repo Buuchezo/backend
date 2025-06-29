@@ -335,6 +335,8 @@ export function updateEventHelperBackend({
       );
     } else if (!wasInOriginal && isInNew) {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
+    } else if (wasInOriginal && isInNew) {
+      slot.remainingCapacity = Math.max(slot.remainingCapacity, 0);
     } else {
       continue;
     }
