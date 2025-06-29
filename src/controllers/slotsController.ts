@@ -742,7 +742,6 @@ export const updateAppointment = catchAsync(async (req, res) => {
     const updatedStart = parseISO(updatedAppointment.start);
     const updatedEnd = parseISO(updatedAppointment.end);
 
-    // Update overlapping slots
     for (const group of groupedOverlappingIds) {
       for (const id of group) {
         if (id === updatedId) continue;
@@ -787,7 +786,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // Process direct updates
+    // Process slots to update
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
         if (!slot._id) continue;
@@ -800,22 +799,22 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // Cleanup: delete available slots only if at full capacity
+    // Don't delete anything unless it's a stale slot with full capacity
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
-      remainingCapacity: MAX_WORKER_CAPACITY,
+      remainingCapacity: workers.length,
     });
 
-    // Update main appointment
+    // Update appointment itself
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // Insert new slots (e.g., newly extended times)
+    // Insert any new slots created (e.g., extended range like 9-10)
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -832,38 +831,6 @@ export const updateAppointment = catchAsync(async (req, res) => {
       });
 
       await Promise.all(insertPromises);
-    }
-
-    // 🔄 Final pass: Fix "fully booked" slots if availability was restored
-    const staleFullyBookedSlots = await SlotModel.find({
-      calendarId: "fully booked",
-    });
-
-    for (const slot of staleFullyBookedSlots) {
-      const slotStart = parseISO(slot.start);
-      const slotEnd = parseISO(slot.end);
-
-      const overlappingAppointments = await SlotModel.find({
-        calendarId: "booked",
-        start: { $lt: slotEnd },
-        end: { $gt: slotStart },
-      });
-
-      const actualBookingCount = overlappingAppointments.length;
-
-      if (actualBookingCount < MAX_WORKER_CAPACITY) {
-        const remaining = MAX_WORKER_CAPACITY - actualBookingCount;
-        const newTitle =
-          remaining === MAX_WORKER_CAPACITY
-            ? "Available Slot"
-            : `Available Slot (${remaining} left)`;
-
-        await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: remaining,
-          calendarId: "available",
-          title: newTitle,
-        });
-      }
     }
 
     res.status(200).json({
