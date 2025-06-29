@@ -256,6 +256,155 @@ function groupOverlappingSlots(events: CalendarEventInput[]): string[][] {
   return groups.map((g) => g.ids);
 }
 
+// export function updateEventHelperBackend({
+//   eventData,
+//   events,
+//   workers,
+// }: {
+//   eventData: CalendarEventInput;
+//   events: CalendarEventInput[];
+//   workers: any[];
+// }): {
+//   updatedEvents: CalendarEventInput[];
+//   updatedAppointment: CalendarEventInput;
+//   slotsToInsert: CalendarEventInput[];
+//   slotsToUpdate: CalendarEventInput[];
+//   groupedOverlappingIds: string[][];
+//   originalAppointment: CalendarEventInput;
+// } {
+//   const formattedStart = normalizeToScheduleXFormat(eventData.start);
+//   const formattedEnd = normalizeToScheduleXFormat(eventData.end);
+
+//   const index = events.findIndex(
+//     (e) => e._id?.toString() === eventData._id || e.id === eventData._id
+//   );
+//   if (index === -1) throw new Error("Original appointment not found");
+
+//   const original = events[index];
+//   if (!original._id) throw new Error("Missing _id in original appointment");
+
+//   const newStart = parseISO(formattedStart);
+//   const newEnd = parseISO(formattedEnd);
+//   const originalStart = parseISO(original.start);
+//   const originalEnd = parseISO(original.end);
+//   const newClientId = original.clientId?.toString();
+
+//   const hasConflict = events.some((e) => {
+//     const isBooked =
+//       e.calendarId === "booked" &&
+//       e._id?.toString() !== original._id?.toString();
+//     const overlaps = parseISO(e.start) < newEnd && parseISO(e.end) > newStart;
+//     const sameClient = e.clientId?.toString() === newClientId;
+//     return isBooked && overlaps && sameClient;
+//   });
+
+//   if (hasConflict) throw new Error("Booking conflict for this timeslot.");
+
+//   const allSlots = events.filter(
+//     (e) =>
+//       e.title?.startsWith("Available Slot") || e.title === "Fully Booked Slot"
+//   );
+
+//   const slotsToUpdate: CalendarEventInput[] = [];
+//   const slotIdSet = new Set();
+//   const MAX_CAPACITY = workers.length;
+
+//   const updatedSlotRange = generateAvailableSlotsBetweenBackend(
+//     newStart,
+//     newEnd
+//   );
+//   const existingSlotTimes = events.map((e) => `${e.start}-${e.end}`);
+//   const slotsToInsert: CalendarEventInput[] = [];
+
+//   for (const slot of updatedSlotRange) {
+//     const slotStart = parseISO(slot.start);
+//     const slotEnd = parseISO(slot.end);
+
+//     const overlappingAppointments = events.filter((e) => {
+//       return (
+//         e.calendarId === "booked" &&
+//         parseISO(e.start) < slotEnd &&
+//         parseISO(e.end) > slotStart
+//       );
+//     });
+
+//     const isFullyBooked = overlappingAppointments.length >= MAX_CAPACITY;
+//     const remainingCapacity = Math.max(
+//       MAX_CAPACITY - overlappingAppointments.length,
+//       0
+//     );
+
+//     const existingSlot = allSlots.find(
+//       (s) =>
+//         normalizeToScheduleXFormat(s.start) === slot.start &&
+//         normalizeToScheduleXFormat(s.end) === slot.end
+//     );
+
+//     const title = isFullyBooked
+//       ? "Fully Booked Slot"
+//       : remainingCapacity >= MAX_CAPACITY
+//         ? "Available Slot"
+//         : `Available Slot (${remainingCapacity} left)`;
+
+//     const calendarId = isFullyBooked ? "fully booked" : "available";
+
+//     const slotData: CalendarEventInput = {
+//       ...(existingSlot ?? slot),
+//       title,
+//       calendarId,
+//       remainingCapacity,
+//     };
+
+//     if (existingSlot) {
+//       slotsToUpdate.push(slotData);
+//     } else {
+//       slotsToInsert.push(slotData);
+//     }
+//   }
+
+//   const assignedWorker = workers.find(
+//     (w) => w._id?.toString() === original.ownerId?.toString()
+//   );
+//   const dynamicTitle = assignedWorker
+//     ? `Booked Appointment with ${assignedWorker.firstName} ${assignedWorker.lastName}`
+//     : "Booked Appointment";
+
+//   const updatedAppointment: CalendarEventInput = {
+//     _id: original._id,
+//     id: original._id.toString(),
+//     title: dynamicTitle,
+//     description: eventData.description || "",
+//     start: formattedStart,
+//     end: formattedEnd,
+//     calendarId: "booked",
+//     ownerId: original.ownerId,
+//     clientId: original.clientId,
+//     clientName: eventData.clientName ?? original.clientName ?? "Guest",
+//   };
+
+//   const overlappingEvents = events.filter((e) => {
+//     const eStart = parseISO(e.start);
+//     const eEnd = parseISO(e.end);
+//     return (
+//       (e.calendarId === "booked" ||
+//         e.title?.startsWith("Available Slot") ||
+//         e.title === "Fully Booked Slot") &&
+//       eEnd > newStart &&
+//       eStart < newEnd
+//     );
+//   });
+
+//   const groupedOverlappingIds = groupOverlappingSlots(overlappingEvents);
+
+//   return {
+//     updatedEvents: slotsToInsert,
+//     slotsToInsert,
+//     updatedAppointment,
+//     slotsToUpdate,
+//     groupedOverlappingIds,
+//     originalAppointment: original,
+//   };
+// }
 export function updateEventHelperBackend({
   eventData,
   events,
@@ -324,9 +473,15 @@ export function updateEventHelperBackend({
       return (
         e.calendarId === "booked" &&
         parseISO(e.start) < slotEnd &&
-        parseISO(e.end) > slotStart
+        parseISO(e.end) > slotStart &&
+        e._id?.toString() !== original._id?.toString()
       );
     });
+
+    // If original still overlaps this slot, include it
+    if (slotStart < originalEnd && slotEnd > originalStart) {
+      overlappingAppointments.push(original);
+    }
 
     const isFullyBooked = overlappingAppointments.length >= MAX_CAPACITY;
     const remainingCapacity = Math.max(
