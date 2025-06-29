@@ -550,6 +550,165 @@ export const markWorkerSick = catchAsync(async (req, res) => {
   }
 });
 
+// export const updateAppointment = catchAsync(async (req, res) => {
+//   const { eventData } = req.body;
+
+//   const workers = await UserModel.find({ role: "worker" });
+//   const MAX_WORKER_CAPACITY = workers.length;
+
+//   const events = await SlotModel.find({});
+
+//   try {
+//     const {
+//       updatedEvents,
+//       updatedAppointment,
+//       slotsToInsert,
+//       slotsToUpdate,
+//       groupedOverlappingIds,
+//       originalAppointment,
+//     } = updateEventHelperBackend({
+//       eventData,
+//       events,
+//       workers,
+//     });
+
+//     const updatedId = updatedAppointment._id?.toString();
+//     if (!updatedId) {
+//       res.status(400).json({ error: "Missing appointment ID" });
+//       return;
+//     }
+
+//     const originalStart = parseISO(originalAppointment.start);
+//     const originalEnd = parseISO(originalAppointment.end);
+//     const updatedStart = parseISO(updatedAppointment.start);
+//     const updatedEnd = parseISO(updatedAppointment.end);
+
+//     for (const group of groupedOverlappingIds) {
+//       for (const id of group) {
+//         if (id === updatedId) continue;
+//         const slot = await SlotModel.findById(id);
+//         if (!slot || typeof slot.remainingCapacity !== "number") continue;
+
+//         const slotStart = parseISO(slot.start);
+//         const slotEnd = parseISO(slot.end);
+
+//         const wasInOriginal =
+//           slotStart < originalEnd && slotEnd > originalStart;
+//         const isInUpdated = slotStart < updatedEnd && slotEnd > updatedStart;
+
+//         if (wasInOriginal && !isInUpdated) {
+//           const currentCap =
+//             typeof slot.remainingCapacity === "number"
+//               ? slot.remainingCapacity
+//               : 0;
+//           const restoredCap = Math.min(currentCap + 1, MAX_WORKER_CAPACITY);
+//           await SlotModel.findByIdAndUpdate(id, {
+//             remainingCapacity: restoredCap,
+//             title: `Available Slot`,
+//           });
+//         }
+
+//         if (!wasInOriginal && isInUpdated) {
+//           const currentCap =
+//             typeof slot.remainingCapacity === "number"
+//               ? slot.remainingCapacity
+//               : 0;
+//           const reducedCap = Math.max(currentCap - 1, 0);
+//           if (reducedCap <= 0) {
+//             await SlotModel.findByIdAndDelete(id);
+//           } else {
+//             await SlotModel.findByIdAndUpdate(id, {
+//               remainingCapacity: reducedCap,
+//               title: `Available Slot`,
+//             });
+//           }
+//         }
+//       }
+//     }
+
+//     if (slotsToUpdate?.length) {
+//       for (const slot of slotsToUpdate) {
+//         if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
+
+//         if (slot.remainingCapacity <= 0) {
+//           await SlotModel.findByIdAndDelete(slot._id);
+//         } else {
+//           await SlotModel.findByIdAndUpdate(
+//             slot._id,
+//             {
+//               remainingCapacity: slot.remainingCapacity,
+//               title: `Available Slot`,
+//             },
+//             { new: true }
+//           );
+//         }
+//       }
+//     }
+
+//     // Only delete fully unbooked slots
+//     await SlotModel.deleteMany({
+//       start: { $lt: parseISO(eventData.end) },
+//       end: { $gt: parseISO(eventData.start) },
+//       calendarId: "available",
+//       remainingCapacity: workers.length,
+//     });
+
+//     await SlotModel.findByIdAndUpdate(
+//       updatedAppointment._id,
+//       updatedAppointment,
+//       { new: true }
+//     );
+
+//     if (slotsToInsert?.length) {
+//       const insertPromises = slotsToInsert.map(async (slot) => {
+//         const exists = await SlotModel.findOne({
+//           start: slot.start,
+//           end: slot.end,
+//           calendarId: "available",
+//         });
+
+//         if (!exists) {
+//           const workerCount = workers.length;
+
+//           if (
+//             slot.remainingCapacity !== undefined &&
+//             slot.remainingCapacity > 0 &&
+//             slot.remainingCapacity < workerCount
+//           ) {
+//             return SlotModel.create(slot);
+//           }
+//         }
+
+//         return null;
+//       });
+
+//       await Promise.all(insertPromises);
+//     }
+
+//     if (updatedEvents?.length) {
+//       const updatePromises = updatedEvents
+//         .filter((e) => e.title === "Available Slot" && e._id)
+//         .map((slot) =>
+//           SlotModel.findByIdAndUpdate(slot._id, {
+//             remainingCapacity: slot.remainingCapacity,
+//           })
+//         );
+
+//       await Promise.all(updatePromises);
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       updatedEvent: updatedAppointment,
+//       groupedOverlappingIds,
+//     });
+//   } catch (error) {
+//     const message =
+//       error instanceof Error ? error.message : "Failed to update appointment.";
+//     res.status(409).json({ error: message });
+//   }
+// });
+
 export const updateAppointment = catchAsync(async (req, res) => {
   const { eventData } = req.body;
 
@@ -596,56 +755,51 @@ export const updateAppointment = catchAsync(async (req, res) => {
           slotStart < originalEnd && slotEnd > originalStart;
         const isInUpdated = slotStart < updatedEnd && slotEnd > updatedStart;
 
+        const currentCap = slot.remainingCapacity;
+
         if (wasInOriginal && !isInUpdated) {
-          const currentCap =
-            typeof slot.remainingCapacity === "number"
-              ? slot.remainingCapacity
-              : 0;
           const restoredCap = Math.min(currentCap + 1, MAX_WORKER_CAPACITY);
+          const newTitle =
+            restoredCap >= MAX_WORKER_CAPACITY
+              ? "Available Slot"
+              : `Available Slot (${restoredCap} left)`;
+
           await SlotModel.findByIdAndUpdate(id, {
             remainingCapacity: restoredCap,
-            title: `Available Slot`,
+            calendarId: "available",
+            title: newTitle,
           });
         }
 
         if (!wasInOriginal && isInUpdated) {
-          const currentCap =
-            typeof slot.remainingCapacity === "number"
-              ? slot.remainingCapacity
-              : 0;
           const reducedCap = Math.max(currentCap - 1, 0);
-          if (reducedCap <= 0) {
-            await SlotModel.findByIdAndDelete(id);
-          } else {
-            await SlotModel.findByIdAndUpdate(id, {
-              remainingCapacity: reducedCap,
-              title: `Available Slot`,
-            });
-          }
+          const isNowFullyBooked = reducedCap <= 0;
+
+          await SlotModel.findByIdAndUpdate(id, {
+            remainingCapacity: reducedCap,
+            calendarId: isNowFullyBooked ? "fully booked" : "available",
+            title: isNowFullyBooked
+              ? "Fully Booked Slot"
+              : `Available Slot (${reducedCap} left)`,
+          });
         }
       }
     }
 
+    // Process slots to update
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
-        if (!slot._id || typeof slot.remainingCapacity !== "number") continue;
+        if (!slot._id) continue;
 
-        if (slot.remainingCapacity <= 0) {
-          await SlotModel.findByIdAndDelete(slot._id);
-        } else {
-          await SlotModel.findByIdAndUpdate(
-            slot._id,
-            {
-              remainingCapacity: slot.remainingCapacity,
-              title: `Available Slot`,
-            },
-            { new: true }
-          );
-        }
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: slot.remainingCapacity,
+          title: slot.title,
+          calendarId: slot.calendarId,
+        });
       }
     }
 
-    // Only delete fully unbooked slots
+    // Don't delete anything unless it's a stale slot with full capacity
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
@@ -653,48 +807,30 @@ export const updateAppointment = catchAsync(async (req, res) => {
       remainingCapacity: workers.length,
     });
 
+    // Update appointment itself
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
+    // Insert any new slots created (e.g., extended range like 9-10)
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
           start: slot.start,
           end: slot.end,
-          calendarId: "available",
+          calendarId: slot.calendarId,
         });
 
         if (!exists) {
-          const workerCount = workers.length;
-
-          if (
-            slot.remainingCapacity !== undefined &&
-            slot.remainingCapacity > 0 &&
-            slot.remainingCapacity < workerCount
-          ) {
-            return SlotModel.create(slot);
-          }
+          return SlotModel.create(slot);
         }
 
         return null;
       });
 
       await Promise.all(insertPromises);
-    }
-
-    if (updatedEvents?.length) {
-      const updatePromises = updatedEvents
-        .filter((e) => e.title === "Available Slot" && e._id)
-        .map((slot) =>
-          SlotModel.findByIdAndUpdate(slot._id, {
-            remainingCapacity: slot.remainingCapacity,
-          })
-        );
-
-      await Promise.all(updatePromises);
     }
 
     res.status(200).json({
