@@ -510,7 +510,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
     const newCap = overlappingSlot.remainingCapacity;
     overlappingSlot.title =
       newCap <= 1
-        ? "Available Slot (1 left)"
+        ? "Available Slot"
         : `Available Slot (${newCap} left)`;
 
     await overlappingSlot.save();
@@ -520,7 +520,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
   // If no slot existed, create a new one
   await SlotModel.create({
-    title: "Available Slot (1 left)",
+    title: "Available Slot",
     start,
     end,
     calendarId: "available",
