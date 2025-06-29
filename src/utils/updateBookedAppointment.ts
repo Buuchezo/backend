@@ -336,7 +336,7 @@ export function updateEventHelperBackend({
     } else if (!wasInOriginal && isInNew) {
       slot.remainingCapacity = Math.max(slot.remainingCapacity - 1, 0);
     } else if (wasInOriginal && isInNew) {
-      slot.remainingCapacity = Math.max(slot.remainingCapacity, 0);
+      // unchanged, but allow passthrough
     } else {
       continue;
     }
@@ -374,10 +374,25 @@ export function updateEventHelperBackend({
     )
     .map((e) => `${e.start}-${e.end}`);
 
-  const slotsToInsert = [...beforeSlotsRaw, ...afterSlotsRaw].filter((slot) => {
-    const key = `${slot.start}-${slot.end}`;
-    return existingSlotTimes.includes(key);
-  });
+  const slotsToInsert = [...beforeSlotsRaw, ...afterSlotsRaw]
+    .map((slot) => {
+      const key = `${slot.start}-${slot.end}`;
+      const alreadyExists = existingSlotTimes.includes(key);
+
+      const slotEvent: CalendarEventInput = {
+        ...slot,
+        title: "Available Slot (1 left)",
+        calendarId: "available",
+        remainingCapacity: 1,
+      };
+
+      if (alreadyExists) {
+        return null;
+      }
+
+      return slotEvent;
+    })
+    .filter(Boolean) as CalendarEventInput[];
 
   const assignedWorker = workers.find(
     (w) => w._id?.toString() === original.ownerId?.toString()
