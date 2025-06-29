@@ -477,7 +477,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
   const { start, end, reducedSlotIds } = deletedEvent;
 
-  // Restore previously reduced slots if any
+  // 🔁 Restore previously reduced slots if any
   if (Array.isArray(reducedSlotIds) && reducedSlotIds.length > 0) {
     const idsAsStrings = reducedSlotIds.map((id) => id.toString());
     await restoreSlotCapacities(idsAsStrings);
@@ -485,11 +485,11 @@ export const deleteAppointment = catchAsync(async (req, res) => {
     return;
   }
 
-  // Get max capacity (usually # of workers)
+  // 📊 Get system max capacity (typically number of workers)
   const workers = await UserModel.find({ role: "worker" });
   const maxCapacity = workers.length;
 
-  // 🔁 Try to find a fully booked OR available slot that overlaps
+  // 🔍 Find overlapping slot that was either "fully booked" or "available"
   const overlappingSlot = await SlotModel.findOne({
     start: { $lt: end },
     end: { $gt: start },
@@ -497,30 +497,30 @@ export const deleteAppointment = catchAsync(async (req, res) => {
   });
 
   if (overlappingSlot) {
-    // Increase capacity
-    overlappingSlot.remainingCapacity =
-      (overlappingSlot.remainingCapacity ?? 0) + 1;
+    // 🔼 Increase capacity
+    overlappingSlot.remainingCapacity = Math.min(
+      (overlappingSlot.remainingCapacity ?? 0) + 1,
+      maxCapacity
+    );
 
-    // Change back to "available" if it was "fully booked"
+    // 🔁 Convert from fully booked to available if needed
     if (overlappingSlot.calendarId === "fully booked") {
       overlappingSlot.calendarId = "available";
     }
 
-    // Update title
-    const newCap = overlappingSlot.remainingCapacity;
+    // ✏️ Update title accordingly
+    const cap = overlappingSlot.remainingCapacity;
     overlappingSlot.title =
-      newCap <= 1
-        ? "Available Slot"
-        : `Available Slot (${newCap} left)`;
+      cap <= 1 ? "Available Slot" : `Available Slot (${cap} left)`;
 
     await overlappingSlot.save();
     res.status(200).json({ success: true });
     return;
   }
 
-  // If no slot existed, create a new one
+  // 🆕 No slot existed — recreate a new one with 1 capacity
   await SlotModel.create({
-    title: "Available Slot",
+    title: "Available Slot (1 left)",
     start,
     end,
     calendarId: "available",
@@ -528,6 +528,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
   });
 
   res.status(200).json({ success: true });
+  return;
 });
 
 export const markWorkerSick = catchAsync(async (req, res) => {
