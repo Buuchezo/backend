@@ -814,7 +814,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       { new: true }
     );
 
-    // Insert any new slots created (e.g., extended range like 9-10)
+    // Insert any new slots created (e.g., extended range like 9–10)
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
@@ -831,6 +831,40 @@ export const updateAppointment = catchAsync(async (req, res) => {
       });
 
       await Promise.all(insertPromises);
+    }
+
+    // 🔄 Post-pass: Fix stale "fully booked" slots if some availability is restored
+    const potentiallyStaleSlots = await SlotModel.find({
+      calendarId: "fully booked",
+    });
+
+    for (const slot of potentiallyStaleSlots) {
+      const slotStart = parseISO(slot.start);
+      const slotEnd = parseISO(slot.end);
+
+      const overlappingAppointments = await SlotModel.find({
+        calendarId: "booked",
+        start: { $lt: slotEnd },
+        end: { $gt: slotStart },
+      });
+
+      const remaining = Math.max(
+        MAX_WORKER_CAPACITY - overlappingAppointments.length,
+        0
+      );
+
+      if (remaining > 0) {
+        const updatedTitle =
+          remaining === MAX_WORKER_CAPACITY
+            ? "Available Slot"
+            : `Available Slot (${remaining} left)`;
+
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: remaining,
+          calendarId: "available",
+          title: updatedTitle,
+        });
+      }
     }
 
     res.status(200).json({
