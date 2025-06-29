@@ -414,6 +414,58 @@ export const getSlots = catchAsync(
   }
 );
 
+// export const deleteAppointment = catchAsync(async (req, res) => {
+//   const eventId = req.params.id;
+
+//   const deletedEvent = await SlotModel.findByIdAndDelete(eventId);
+//   if (!deletedEvent) {
+//     res.status(404).json({ error: "Appointment not found" });
+//     return;
+//   }
+
+//   const { start, end, reducedSlotIds } = deletedEvent;
+
+//   if (Array.isArray(reducedSlotIds) && reducedSlotIds.length > 0) {
+//     const idsAsStrings = reducedSlotIds.map((id) => id.toString());
+//     await restoreSlotCapacities(idsAsStrings);
+//     res.status(200).json({ success: true });
+//     return;
+//   }
+
+//   // Fallback logic (optional)
+//   const workers = await UserModel.find({ role: "worker" });
+//   const maxCapacity = workers.length;
+
+//   const overlappingSlots = await SlotModel.find({
+//     calendarId: "available",
+//     start: { $lt: end },
+//     end: { $gt: start },
+//   });
+
+//   if (overlappingSlots.length > 0) {
+//     for (const slot of overlappingSlots) {
+//       const newCap = Math.min((slot.remainingCapacity ?? 0) + 1, maxCapacity);
+//       slot.remainingCapacity = newCap;
+//       slot.title = `Available Slot`;
+//       await slot.save();
+//     }
+
+//     res.status(200).json({ success: true });
+//     return;
+//   }
+
+//   // Final fallback: create slot
+//   await SlotModel.create({
+//     title: "Available Slot (1 left)",
+//     start,
+//     end,
+//     calendarId: "available",
+//     remainingCapacity: 1,
+//   });
+
+//   res.status(200).json({ success: true });
+// });
+
 export const deleteAppointment = catchAsync(async (req, res) => {
   const eventId = req.params.id;
 
@@ -425,6 +477,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
 
   const { start, end, reducedSlotIds } = deletedEvent;
 
+  // Restore previously reduced slots if any
   if (Array.isArray(reducedSlotIds) && reducedSlotIds.length > 0) {
     const idsAsStrings = reducedSlotIds.map((id) => id.toString());
     await restoreSlotCapacities(idsAsStrings);
@@ -432,29 +485,40 @@ export const deleteAppointment = catchAsync(async (req, res) => {
     return;
   }
 
-  // Fallback logic (optional)
+  // Get max capacity (usually # of workers)
   const workers = await UserModel.find({ role: "worker" });
   const maxCapacity = workers.length;
 
-  const overlappingSlots = await SlotModel.find({
-    calendarId: "available",
+  // 🔁 Try to find a fully booked OR available slot that overlaps
+  const overlappingSlot = await SlotModel.findOne({
     start: { $lt: end },
     end: { $gt: start },
+    calendarId: { $in: ["available", "fully booked"] },
   });
 
-  if (overlappingSlots.length > 0) {
-    for (const slot of overlappingSlots) {
-      const newCap = Math.min((slot.remainingCapacity ?? 0) + 1, maxCapacity);
-      slot.remainingCapacity = newCap;
-      slot.title = `Available Slot`;
-      await slot.save();
+  if (overlappingSlot) {
+    // Increase capacity
+    overlappingSlot.remainingCapacity =
+      (overlappingSlot.remainingCapacity ?? 0) + 1;
+
+    // Change back to "available" if it was "fully booked"
+    if (overlappingSlot.calendarId === "fully booked") {
+      overlappingSlot.calendarId = "available";
     }
 
+    // Update title
+    const newCap = overlappingSlot.remainingCapacity;
+    overlappingSlot.title =
+      newCap <= 1
+        ? "Available Slot (1 left)"
+        : `Available Slot (${newCap} left)`;
+
+    await overlappingSlot.save();
     res.status(200).json({ success: true });
     return;
   }
 
-  // Final fallback: create slot
+  // If no slot existed, create a new one
   await SlotModel.create({
     title: "Available Slot (1 left)",
     start,
