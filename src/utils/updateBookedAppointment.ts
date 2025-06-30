@@ -499,7 +499,7 @@ export function updateEventHelperBackend({
       ? "Fully Booked Slot"
       : remainingCapacity >= MAX_CAPACITY
         ? "Available Slot"
-        : `Available Slot (${remainingCapacity} left)`;
+        : `Available Slot `;
 
     const calendarId = isFullyBooked ? "fully booked" : "available";
 

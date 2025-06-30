@@ -334,7 +334,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
           const newTitle =
             restoredCap >= MAX_WORKER_CAPACITY
               ? "Available Slot"
-              : `Available Slot (${restoredCap} left)`;
+              : `Available Slot`;
 
           console.log(
             `✅ Restoring slot ${slot._id} to capacity: ${restoredCap}`
