@@ -709,6 +709,142 @@ export const markWorkerSick = catchAsync(async (req, res) => {
 //   }
 // });
 
+// export const updateAppointment = catchAsync(async (req, res) => {
+//   const { eventData } = req.body;
+
+//   const workers = await UserModel.find({ role: "worker" });
+//   const MAX_WORKER_CAPACITY = workers.length;
+
+//   const events = await SlotModel.find({});
+
+//   try {
+//     const {
+//       updatedEvents,
+//       updatedAppointment,
+//       slotsToInsert,
+//       slotsToUpdate,
+//       groupedOverlappingIds,
+//       originalAppointment,
+//     } = updateEventHelperBackend({
+//       eventData,
+//       events,
+//       workers,
+//     });
+
+//     const updatedId = updatedAppointment._id?.toString();
+//     if (!updatedId) {
+//       res.status(400).json({ error: "Missing appointment ID" });
+//       return;
+//     }
+
+//     const originalStart = parseISO(originalAppointment.start);
+//     const originalEnd = parseISO(originalAppointment.end);
+//     const updatedStart = parseISO(updatedAppointment.start);
+//     const updatedEnd = parseISO(updatedAppointment.end);
+
+//     for (const group of groupedOverlappingIds) {
+//       for (const id of group) {
+//         if (id === updatedId) continue;
+//         const slot = await SlotModel.findById(id);
+//         if (!slot || typeof slot.remainingCapacity !== "number") continue;
+
+//         const slotStart = parseISO(slot.start);
+//         const slotEnd = parseISO(slot.end);
+
+//         const wasInOriginal =
+//           slotStart < originalEnd && slotEnd > originalStart;
+//         const isInUpdated = slotStart < updatedEnd && slotEnd > updatedStart;
+
+//         const currentCap = slot.remainingCapacity;
+
+//         if (wasInOriginal && !isInUpdated) {
+//           const restoredCap = Math.min(currentCap + 1, MAX_WORKER_CAPACITY);
+//           const newTitle =
+//             restoredCap >= MAX_WORKER_CAPACITY
+//               ? "Available Slot"
+//               : `Available Slot (${restoredCap} left)`;
+
+//           await SlotModel.findByIdAndUpdate(id, {
+//             remainingCapacity: restoredCap,
+//             calendarId: "available",
+//             title: newTitle,
+//           });
+//         }
+
+//         if (!wasInOriginal && isInUpdated) {
+//           const reducedCap = Math.max(currentCap - 1, 0);
+//           const isNowFullyBooked = reducedCap <= 0;
+
+//           await SlotModel.findByIdAndUpdate(id, {
+//             remainingCapacity: reducedCap,
+//             calendarId: isNowFullyBooked ? "fully booked" : "available",
+//             title: isNowFullyBooked
+//               ? "Fully Booked Slot"
+//               : `Available Slot (${reducedCap} left)`,
+//           });
+//         }
+//       }
+//     }
+
+//     // Process slots to update
+//     if (slotsToUpdate?.length) {
+//       for (const slot of slotsToUpdate) {
+//         if (!slot._id) continue;
+
+//         await SlotModel.findByIdAndUpdate(slot._id, {
+//           remainingCapacity: slot.remainingCapacity,
+//           title: slot.title,
+//           calendarId: slot.calendarId,
+//         });
+//       }
+//     }
+
+//     // Don't delete anything unless it's a stale slot with full capacity
+//     await SlotModel.deleteMany({
+//       start: { $lt: parseISO(eventData.end) },
+//       end: { $gt: parseISO(eventData.start) },
+//       calendarId: "available",
+//       remainingCapacity: workers.length,
+//     });
+
+//     // Update appointment itself
+//     await SlotModel.findByIdAndUpdate(
+//       updatedAppointment._id,
+//       updatedAppointment,
+//       { new: true }
+//     );
+
+//     // Insert any new slots created (e.g., extended range like 9-10)
+//     if (slotsToInsert?.length) {
+//       const insertPromises = slotsToInsert.map(async (slot) => {
+//         const exists = await SlotModel.findOne({
+//           start: slot.start,
+//           end: slot.end,
+//           calendarId: slot.calendarId,
+//         });
+
+//         if (!exists) {
+//           return SlotModel.create(slot);
+//         }
+
+//         return null;
+//       });
+
+//       await Promise.all(insertPromises);
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       updatedEvent: updatedAppointment,
+//       groupedOverlappingIds,
+//     });
+//   } catch (error) {
+//     const message =
+//       error instanceof Error ? error.message : "Failed to update appointment.";
+//     res.status(409).json({ error: message });
+//   }
+// });
+
 export const updateAppointment = catchAsync(async (req, res) => {
   const { eventData } = req.body;
 
@@ -742,6 +878,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
     const updatedStart = parseISO(updatedAppointment.start);
     const updatedEnd = parseISO(updatedAppointment.end);
 
+    // Adjust slot capacities for slots that overlap
     for (const group of groupedOverlappingIds) {
       for (const id of group) {
         if (id === updatedId) continue;
@@ -786,6 +923,45 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
+    // ✅ NEW FIX: Adjust stale slots not in groupedOverlappingIds
+    const allGroupedIds = groupedOverlappingIds.flat();
+    const staleSlots = await SlotModel.find({
+      start: { $lt: originalEnd },
+      end: { $gt: originalStart },
+      calendarId: "fully booked",
+      _id: { $nin: [updatedId, ...allGroupedIds] },
+    });
+
+    for (const slot of staleSlots) {
+      const slotStart = parseISO(slot.start);
+      const slotEnd = parseISO(slot.end);
+
+      const wasInOriginal = slotStart < originalEnd && slotEnd > originalStart;
+      const isInUpdated = slotStart < updatedEnd && slotEnd > updatedStart;
+
+      if (
+        wasInOriginal &&
+        !isInUpdated &&
+        typeof slot.remainingCapacity === "number"
+      ) {
+        const restoredCap = Math.min(
+          slot.remainingCapacity + 1,
+          MAX_WORKER_CAPACITY
+        );
+
+        const newTitle =
+          restoredCap >= MAX_WORKER_CAPACITY
+            ? "Available Slot"
+            : `Available Slot (${restoredCap} left)`;
+
+        await SlotModel.findByIdAndUpdate(slot._id, {
+          remainingCapacity: restoredCap,
+          calendarId: "available",
+          title: newTitle,
+        });
+      }
+    }
+
     // Process slots to update
     if (slotsToUpdate?.length) {
       for (const slot of slotsToUpdate) {
@@ -799,22 +975,22 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // Don't delete anything unless it's a stale slot with full capacity
+    // Delete stale fully available slots in updated range
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
       end: { $gt: parseISO(eventData.start) },
       calendarId: "available",
-      remainingCapacity: workers.length,
+      remainingCapacity: MAX_WORKER_CAPACITY,
     });
 
-    // Update appointment itself
+    // Update the appointment itself
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
       updatedAppointment,
       { new: true }
     );
 
-    // Insert any new slots created (e.g., extended range like 9-10)
+    // Insert any new slots created
     if (slotsToInsert?.length) {
       const insertPromises = slotsToInsert.map(async (slot) => {
         const exists = await SlotModel.findOne({
