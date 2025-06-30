@@ -52,21 +52,9 @@ export async function adjustSlotCapacity(
   end: Date,
   delta: number
 ) {
-  const normalizedStart = normalizeToScheduleXFormat(
-    format(start, "yyyy-MM-dd HH:mm")
-  );
-  const normalizedEnd = normalizeToScheduleXFormat(
-    format(end, "yyyy-MM-dd HH:mm")
-  );
-
   const totalWorkers = await UserModel.countDocuments({ role: "worker" });
 
-  const slots = await SlotModel.find({
-    calendarId: "available",
-    start: { $lt: normalizedEnd },
-    end: { $gt: normalizedStart },
-  });
-
+  // Split the time range into 1-hour chunks
   const slotRange: Date[] = [];
   let cursor = new Date(start);
   while (cursor < end) {
@@ -75,22 +63,36 @@ export async function adjustSlotCapacity(
   }
 
   for (const slotTime of slotRange) {
-    const slotStart = normalizeToScheduleXFormat(
+    const slotStartStr = normalizeToScheduleXFormat(
       format(slotTime, "yyyy-MM-dd HH:mm")
     );
-    const slotEnd = normalizeToScheduleXFormat(
+    const slotEndStr = normalizeToScheduleXFormat(
       format(addMinutes(slotTime, 60), "yyyy-MM-dd HH:mm")
     );
 
-    const existingSlot = slots.find(
-      (s) => s.start === slotStart && s.end === slotEnd
-    );
+    const slot = await SlotModel.findOne({
+      start: slotStartStr,
+      end: slotEndStr,
+      calendarId: { $in: ["available", "fully booked"] },
+    });
 
-    if (existingSlot) {
-      const current = existingSlot.remainingCapacity ?? totalWorkers;
-      const newCap = Math.max(0, Math.min(current + delta, totalWorkers));
+    if (!slot && delta < 0) {
+      // Reducing participants but no slot found → skip
+      continue;
+    }
 
-      await SlotModel.findByIdAndUpdate(existingSlot._id, {
+    if (!slot && delta > 0) {
+      // Recreate the slot
+      const recreatedSlot = generateSlotForTimeRange(slotTime, delta);
+      await SlotModel.create(recreatedSlot);
+      continue;
+    }
+
+    if (slot) {
+      const currentCap = slot.remainingCapacity ?? totalWorkers;
+      const newCap = Math.max(0, Math.min(currentCap + delta, totalWorkers));
+
+      await SlotModel.findByIdAndUpdate(slot._id, {
         remainingCapacity: newCap,
         calendarId: newCap === 0 ? "fully booked" : "available",
         title:
@@ -100,20 +102,16 @@ export async function adjustSlotCapacity(
               ? "Available Slot"
               : `Available Slot (${newCap} left)`,
       });
-    } else if (delta > 0) {
-      // slot was previously deleted (fully booked), recreate it
-      const recreated = {
-        start: slotStart,
-        end: slotEnd,
-        calendarId: delta === totalWorkers ? "available" : "available",
-        remainingCapacity: Math.min(delta, totalWorkers),
-        title:
-          delta === totalWorkers
-            ? "Available Slot"
-            : `Available Slot (${delta} left)`,
-      };
 
-      await SlotModel.create(recreated);
+      // Remove duplicates of fully booked slots with same range
+      if (newCap > 0) {
+        await SlotModel.deleteMany({
+          _id: { $ne: slot._id },
+          start: slotStartStr,
+          end: slotEndStr,
+          calendarId: "fully booked",
+        });
+      }
     }
   }
 }
