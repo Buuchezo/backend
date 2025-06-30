@@ -14,7 +14,7 @@ import {
 
 const router = express.Router();
 
-router.get("/", protect, getAllInternalEvents);
+router.get("/", getAllInternalEvents);
 router.get("/:id", protect, getInternalEvent);
 router.delete("/:id", protect, canDeleteInternalEvent, deleteInternalEvent);
 router.patch("/:id", protect, canUpdateInternalEvent, updateInternalEvent);
