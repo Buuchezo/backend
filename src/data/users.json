@@ -1,7 +1,0 @@
-[
-  { "id": "user1", "name": "John Doe", "email": "john@example.com", "role": "user" },
-  { "id": "user2", "name": "Jane Smith", "email": "jane@example.com", "role": "user" },
-  { "id": "user3", "name": "Jane Antony", "email": "janea@example.com", "role": "user" },
-  { "id": "user3", "name": "Jane Antony", "email": "janea@example.com", "role": "user" },
-  { "id": "user311", "name": "Jane Antony", "email": "janea@example.com", "role": "user" }
-]

@@ -1,18 +1,23 @@
-import express from 'express'
+import express from "express";
 import {
   getAllInternalEvents,
   createInternalEvent,
   getInternalEvent,
   deleteInternalEvent,
   updateInternalEvent,
-} from '../controllers/internalEventsController'
+} from "../controllers/internalEventsController";
+import {
+  protect,
+  canDeleteInternalEvent,
+  canUpdateInternalEvent,
+} from "../controllers/authenticationController";
 
-const router = express.Router()
+const router = express.Router();
 
-router.get('/', getAllInternalEvents)
-router.get('/:id', getInternalEvent)
-router.delete('/:id', deleteInternalEvent)
-router.patch('/:id', updateInternalEvent)
-router.post('/', createInternalEvent)
+router.get("/", protect, getAllInternalEvents);
+router.get("/:id", protect, getInternalEvent);
+router.delete("/:id", protect, canDeleteInternalEvent, deleteInternalEvent);
+router.patch("/:id", protect, canUpdateInternalEvent, updateInternalEvent);
+router.post("/", protect, createInternalEvent);
 
-export default router
+export default router;
