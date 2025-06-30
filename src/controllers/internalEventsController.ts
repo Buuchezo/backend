@@ -67,20 +67,54 @@ export async function adjustSlotCapacity(
     end: { $gt: normalizedStart },
   });
 
-  for (const slot of slots) {
-    const current = slot.remainingCapacity ?? totalWorkers;
-    const newCap = Math.max(0, Math.min(current + delta, totalWorkers));
+  const slotRange: Date[] = [];
+  let cursor = new Date(start);
+  while (cursor < end) {
+    slotRange.push(new Date(cursor));
+    cursor = addMinutes(cursor, 60);
+  }
 
-    await SlotModel.findByIdAndUpdate(slot._id, {
-      remainingCapacity: newCap,
-      calendarId: newCap === 0 ? "fully booked" : "available",
-      title:
-        newCap === 0
-          ? "Fully Booked Slot"
-          : newCap === totalWorkers
+  for (const slotTime of slotRange) {
+    const slotStart = normalizeToScheduleXFormat(
+      format(slotTime, "yyyy-MM-dd HH:mm")
+    );
+    const slotEnd = normalizeToScheduleXFormat(
+      format(addMinutes(slotTime, 60), "yyyy-MM-dd HH:mm")
+    );
+
+    const existingSlot = slots.find(
+      (s) => s.start === slotStart && s.end === slotEnd
+    );
+
+    if (existingSlot) {
+      const current = existingSlot.remainingCapacity ?? totalWorkers;
+      const newCap = Math.max(0, Math.min(current + delta, totalWorkers));
+
+      await SlotModel.findByIdAndUpdate(existingSlot._id, {
+        remainingCapacity: newCap,
+        calendarId: newCap === 0 ? "fully booked" : "available",
+        title:
+          newCap === 0
+            ? "Fully Booked Slot"
+            : newCap === totalWorkers
+              ? "Available Slot"
+              : `Available Slot (${newCap} left)`,
+      });
+    } else if (delta > 0) {
+      // slot was previously deleted (fully booked), recreate it
+      const recreated = {
+        start: slotStart,
+        end: slotEnd,
+        calendarId: delta === totalWorkers ? "available" : "available",
+        remainingCapacity: Math.min(delta, totalWorkers),
+        title:
+          delta === totalWorkers
             ? "Available Slot"
-            : `Available Slot (${newCap} left)`,
-    });
+            : `Available Slot (${delta} left)`,
+      };
+
+      await SlotModel.create(recreated);
+    }
   }
 }
 
