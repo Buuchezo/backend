@@ -221,7 +221,7 @@ export const deleteAppointment = catchAsync(async (req, res) => {
     // ✏️ Update title accordingly
     const cap = overlappingSlot.remainingCapacity;
     overlappingSlot.title =
-      cap <= 1 ? "Available Slot" : `Available Slot (${cap} left)`;
+      cap <= 1 ? "Available Slot" : `Available Slot`;
 
     await overlappingSlot.save();
     res.status(200).json({ success: true });
@@ -358,7 +358,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
             calendarId: isNowFullyBooked ? "fully booked" : "available",
             title: isNowFullyBooked
               ? "Fully Booked Slot"
-              : `Available Slot (${reducedCap} left)`,
+              : `Available Slot`,
           });
         }
       }
@@ -396,7 +396,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       const newTitle =
         restoredCap >= MAX_WORKER_CAPACITY
           ? "Available Slot"
-          : `Available Slot (${restoredCap} left)`;
+          : `Available Slot`;
 
       console.log(
         `♻️ Restoring cut-off slot ${slot._id} to capacity: ${restoredCap}`
