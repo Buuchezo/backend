@@ -8,6 +8,7 @@ import { sendEmail } from "../utils/email";
 import crypto from "crypto";
 import { InternalEventModel } from "../models/internalEventModel";
 import { AppointmentModel } from "../models/appointmentModel";
+import { SlotModel } from "../models/slotsModel";
 
 export interface AuthenticatedRequest extends Request {
   user?: IUser;
@@ -92,19 +93,19 @@ export const authorizeAppointmentAccess = async (
   next: NextFunction
 ) => {
   const user = (req as AuthenticatedRequest).user;
-  const appointmentId = req.params.id;
+  const slotId = req.params.id;
 
   if (!user) {
     return next(new AppError("You must be logged in.", 401));
   }
 
-  const appointment = await AppointmentModel.findById(appointmentId);
+  const slot = await SlotModel.findById(slotId);
 
-  if (!appointment) {
+  if (!slot) {
     return next(new AppError("Appointment not found.", 404));
   }
 
-  const isOwner = appointment.ownerId?.toString() === user.id;
+  const isOwner = slot.ownerId?.toString() === user.id;
   const isAdmin = user.role === "admin";
 
   if (!isOwner && !isAdmin) {
