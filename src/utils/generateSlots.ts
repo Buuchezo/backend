@@ -27,64 +27,63 @@ export async function generateSlotsMiddleware(
   res: Response,
   next: NextFunction
 ) {
-  const { year, month } = req.body;
+  const { year } = req.body;
 
-  if (typeof year !== "number" || typeof month !== "number") {
-    res
-      .status(400)
-      .json({ message: "Year and month must be provided as numbers." });
+  if (typeof year !== "number") {
+    res.status(400).json({ message: "Year must be provided as a number." });
     return;
   }
 
-  // ✅ Fetch all workers
   const workers = await UserModel.find({ role: "worker" });
   const workerCount = workers.length;
-  const daysInMonth = eachDayOfInterval({
-    start: startOfMonth(new Date(year, month)),
-    end: endOfMonth(new Date(year, month)),
-  });
-
   const slots = [];
 
-  for (const date of daysInMonth) {
-    const dayOfWeek = getDay(date);
+  for (let month = 0; month < 12; month++) {
+    const daysInMonth = eachDayOfInterval({
+      start: startOfMonth(new Date(year, month)),
+      end: endOfMonth(new Date(year, month)),
+    });
 
-    let startHour: number | null = null;
-    let endHour: number | null = null;
+    for (const date of daysInMonth) {
+      const dayOfWeek = getDay(date);
 
-    if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-      startHour = 8;
-      endHour = 16;
-    } else if (dayOfWeek === 6) {
-      startHour = 9;
-      endHour = 13;
-    } else {
-      continue; // Skip Sundays
-    }
+      let startHour: number | null = null;
+      let endHour: number | null = null;
 
-    let current = new Date(date);
-    current.setHours(startHour, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(endHour, 0, 0, 0);
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        startHour = 8;
+        endHour = 16;
+      } else if (dayOfWeek === 6) {
+        startHour = 9;
+        endHour = 13;
+      } else {
+        continue; // Skip Sundays
+      }
 
-    while (current < end) {
-      const slotEnd = addMinutes(current, 60);
+      let current = new Date(date);
+      current.setHours(startHour, 0, 0, 0);
+      const end = new Date(date);
+      end.setHours(endHour, 0, 0, 0);
 
-      slots.push({
-        title: "Available Slot",
-        description: "",
-        start: format(current, "yyyy-MM-dd HH:mm"),
-        end: format(slotEnd, "yyyy-MM-dd HH:mm"),
-        calendarId: "available",
-        remainingCapacity: workerCount, // ✅ Explicitly set
-        ownerId: undefined, // ✅ Ensure included, even if null
-        clientId: undefined,
-        clientName: undefined,
-        sharedWith: [],
-        visibility: "public",
-      });
+      while (current < end) {
+        const slotEnd = addMinutes(current, 60);
 
-      current = slotEnd;
+        slots.push({
+          title: "Available Slot",
+          description: "",
+          start: format(current, "yyyy-MM-dd HH:mm"),
+          end: format(slotEnd, "yyyy-MM-dd HH:mm"),
+          calendarId: "available",
+          remainingCapacity: workerCount,
+          ownerId: undefined,
+          clientId: undefined,
+          clientName: undefined,
+          sharedWith: [],
+          visibility: "public",
+        });
+
+        current = slotEnd;
+      }
     }
   }
 
