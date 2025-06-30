@@ -925,12 +925,27 @@ export const updateAppointment = catchAsync(async (req, res) => {
 
     // ✅ NEW FIX: Adjust stale slots not in groupedOverlappingIds
     const allGroupedIds = groupedOverlappingIds.flat();
+    console.log("Original:", originalStart, originalEnd);
+    console.log("Updated:", updatedStart, updatedEnd);
+    console.log("Stale Check _id exclude:", updatedId, allGroupedIds);
+
     const staleSlots = await SlotModel.find({
       start: { $lt: originalEnd },
       end: { $gt: originalStart },
-      calendarId: "fully booked",
+      calendarId: "fully booked", // <-- CHECK spelling!
       _id: { $nin: [updatedId, ...allGroupedIds] },
     });
+
+    console.log(
+      "Found staleSlots:",
+      staleSlots.map((s) => ({
+        _id: s._id,
+        start: s.start,
+        end: s.end,
+        calendarId: s.calendarId,
+        remainingCapacity: s.remainingCapacity,
+      }))
+    );
 
     for (const slot of staleSlots) {
       const slotStart = parseISO(slot.start);
