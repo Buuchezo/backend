@@ -415,8 +415,18 @@ export const updateInternalEvent = catchAsync(
     const newStart = parseISO(start);
     const newEnd = parseISO(end);
 
-    await adjustSlotCapacity(oldStart, oldEnd, previousParticipants); // restore
-    await adjustSlotCapacity(newStart, newEnd, -currentParticipants); // apply
+    const isSameTimeRange =
+      oldStart.getTime() === newStart.getTime() &&
+      oldEnd.getTime() === newEnd.getTime();
+
+    console.log("📏 Is same range:", isSameTimeRange);
+    console.log("🔁 Adjusting slot capacity for internal event update...");
+    console.log("  - Old participants:", previousParticipants);
+    console.log("  - New participants:", currentParticipants);
+
+    // Always restore and reapply in case of participant change
+    await adjustSlotCapacity(oldStart, oldEnd, previousParticipants);
+    await adjustSlotCapacity(newStart, newEnd, -currentParticipants);
 
     const updated = await InternalEventModel.findByIdAndUpdate(
       internalEventId,
