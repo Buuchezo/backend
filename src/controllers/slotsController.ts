@@ -889,7 +889,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       updatedEnd.toISOString()
     );
 
-    // --- Adjust overlapping slots ---
+    // Handle overlapping capacity updates
     for (const group of groupedOverlappingIds) {
       for (const id of group) {
         if (id === updatedId) continue;
@@ -949,40 +949,51 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // ✅ FINAL FIX: recover slots in cut-off time window regardless of calendarId
+    // ✅ Restore slots that are no longer in the updated range
     console.log(
       "🔍 Finding slots to recover between updatedEnd and originalEnd"
     );
-    const staleSlots = await SlotModel.find({
-      start: { $gte: updatedEnd, $lt: originalEnd },
-    });
+    const allSlots = await SlotModel.find({});
+    const slotsToRestore = allSlots.filter(
+      (slot): slot is typeof slot & { remainingCapacity: number } => {
+        const slotStart = parseISO(slot.start);
+        const slotEnd = parseISO(slot.end);
 
-    console.log(`📦 Found ${staleSlots.length} slots in reduced window`);
-    for (const slot of staleSlots) {
-      if (!slot || typeof slot.remainingCapacity !== "number") continue;
+        const isOverlappingRemovedRange =
+          slotEnd > updatedEnd &&
+          slotStart < originalEnd &&
+          slotStart >= updatedEnd;
 
-      if (slot.remainingCapacity < MAX_WORKER_CAPACITY) {
-        const restoredCap = Math.min(
-          slot.remainingCapacity + 1,
-          MAX_WORKER_CAPACITY
+        return (
+          isOverlappingRemovedRange &&
+          typeof slot.remainingCapacity === "number" &&
+          slot.remainingCapacity < MAX_WORKER_CAPACITY
         );
-        const newTitle =
-          restoredCap >= MAX_WORKER_CAPACITY
-            ? "Available Slot"
-            : `Available Slot (${restoredCap} left)`;
-
-        console.log(
-          `♻️ Restoring cut-off slot ${slot._id} to capacity: ${restoredCap}`
-        );
-        await SlotModel.findByIdAndUpdate(slot._id, {
-          remainingCapacity: restoredCap,
-          calendarId: "available",
-          title: newTitle,
-        });
       }
+    );
+
+    console.log(`📦 Found ${slotsToRestore.length} slots in reduced window`);
+    for (const slot of slotsToRestore) {
+      const restoredCap = Math.min(
+        slot.remainingCapacity + 1,
+        MAX_WORKER_CAPACITY
+      );
+      const newTitle =
+        restoredCap >= MAX_WORKER_CAPACITY
+          ? "Available Slot"
+          : `Available Slot (${restoredCap} left)`;
+
+      console.log(
+        `♻️ Restoring cut-off slot ${slot._id} to capacity: ${restoredCap}`
+      );
+      await SlotModel.findByIdAndUpdate(slot._id, {
+        remainingCapacity: restoredCap,
+        calendarId: "available",
+        title: newTitle,
+      });
     }
 
-    // --- Update modified slots ---
+    // Update modified slots
     if (slotsToUpdate?.length) {
       console.log(`🛠️ Updating ${slotsToUpdate.length} modified slots`);
       for (const slot of slotsToUpdate) {
@@ -996,7 +1007,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // --- Delete fully open, unused slots ---
+    // Delete stale slots that are fully open and unused
     console.log("🧹 Deleting unused full-capacity slots in updated range");
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
@@ -1005,7 +1016,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       remainingCapacity: MAX_WORKER_CAPACITY,
     });
 
-    // --- Update appointment ---
+    // Update the main appointment
     console.log(`✏️ Updating appointment ${updatedAppointment._id}`);
     await SlotModel.findByIdAndUpdate(
       updatedAppointment._id,
@@ -1013,7 +1024,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       { new: true }
     );
 
-    // --- Insert new slots ---
+    // Insert new slots
     if (slotsToInsert?.length) {
       console.log(`➕ Inserting ${slotsToInsert.length} new slots`);
       const insertPromises = slotsToInsert.map(async (slot) => {
