@@ -21,7 +21,7 @@ router.post("/:id", protect, createAppointment);
 router.delete("/:id", protect, authorizeAppointmentAccess, deleteAppointment);
 router.patch("/:id", protect, authorizeAppointmentAccess, updateAppointment);
 router.post("/", generateSlotsMiddleware, createSlots);
-router.get("/", protect, getSlots);
+router.get("/", getSlots);
 router.get("/:id", protect, getSlot);
 
 export default router;
