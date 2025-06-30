@@ -949,11 +949,11 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // --- FIXED: Look for stale slots in reduced range ---
+    // ✅ FIXED: capture slots that were part of the old range but are no longer needed
     console.log("🔍 Finding stale slots between updatedEnd and originalEnd");
+
     const staleSlots = await SlotModel.find({
-      start: { $lt: originalEnd },
-      end: { $gt: updatedEnd },
+      start: { $gte: updatedEnd, $lt: originalEnd },
       calendarId: "fully booked",
     });
 
@@ -980,7 +980,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       });
     }
 
-    // --- Update existing slots ---
+    // --- Update modified slots ---
     if (slotsToUpdate?.length) {
       console.log(`🛠️ Updating ${slotsToUpdate.length} modified slots`);
       for (const slot of slotsToUpdate) {
@@ -994,7 +994,7 @@ export const updateAppointment = catchAsync(async (req, res) => {
       }
     }
 
-    // --- Clean up stale fully open slots ---
+    // --- Delete fully open, unused slots in the updated time range ---
     console.log("🧹 Deleting unused full-capacity slots in updated range");
     await SlotModel.deleteMany({
       start: { $lt: parseISO(eventData.end) },
